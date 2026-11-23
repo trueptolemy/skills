@@ -5,7 +5,10 @@
 # Refuses unless the newest gates summary of the task ends with RESULT PASS and
 # DONE, so a failing or unfinished run cannot be delivered by mistake. An
 # investigate or operate task needs no gates summary: it only has to leave its
-# worktree unchanged.
+# worktree unchanged. Every mode refuses while a round's guard reports a change
+# outside the worktree that ledger.sh guard-ack has not recorded. Its own
+# changes (commit, fast-forward, worktree removal) are recorded for the guard
+# of rounds running in parallel.
 #
 # investigate and operate tasks deliver their report: nothing is committed, and the clean
 # worktree is removed. Other modes commit on the task branch; MSG_FILE_CHECK runs
@@ -36,6 +39,10 @@ done
 task_paths "$tid"
 [[ -d $WT ]] || die "worktree $WT does not exist"
 task_header
+guard_settle
+guard=$(guard_failures)
+[[ -z $guard ]] || die "a round of $TID changed state outside its worktree; stop, or record your own change with ledger.sh guard-ack:"$'\n'"$guard"
+planner_begin
 
 remove_worktree() {
   if (( keep )); then echo "kept worktree $WT"; return; fi

@@ -36,6 +36,12 @@
 # malformed report, a sandbox other than the one requested, or model or effort
 # drift: a value other than CODEX_MODEL / CODEX_EFFORT, or, when those are
 # unset, other than round 1's. Read those lines first.
+# Every round is guarded (see lib.sh): it snapshots the repository's refs,
+# worktree branches, shared git files and other checkouts before and after
+# Codex runs and prints `GUARD PASS` or one `GUARD FAIL` line per change made
+# outside the task's own worktree. A GUARD FAIL exits 5 (unless Codex itself
+# failed) and stops acceptance until it is resolved; it is a forbidden action
+# unless the planner made that change itself (ledger.sh guard-ack).
 
 source "$(dirname "$0")/lib.sh"
 cdl_load
@@ -71,8 +77,29 @@ finish_round() {  # round, report, log
   model=$(expected model "$CODEX_MODEL"); effort=$(expected effort "$CODEX_EFFORT")
   echo "round $1 exit rc=$rc $(stamp)" >> "$TD/rounds.log"
   echo "codex rc=$rc mode=$TASK_MODE"
-  { report_check "$2" || true; codex_meta "$3" "$sandbox" "$model" "$effort"; } |
+  { report_check "$2" || true; codex_meta "$3" "$sandbox" "$model" "$effort"; cat "$TD/guard-r$1.txt"; } |
     sed "s/^/round $1 /" | tee -a "$TD/rounds.log"
+}
+# One round: the start line first, so the guard counts this task as busy and
+# leaves its own worktree alone; then snapshot, Codex, snapshot and verdict.
+# The command runs from the worktree because resume has no --cd.
+run_round() {  # round, report, log, stdin file, start line, command...
+  local n=$1 report=$2 log=$3 input=$4 line=$5
+  shift 5
+  guard_settle
+  echo "$line $(stamp)" >> "$TD/rounds.log"
+  guard_snapshot "$TD/guard-r$n.before"
+  set +e
+  (cd "$WT" && "$@" < "$input") > "$log" 2>&1
+  rc=$?
+  set -e
+  guard_check "$n"
+  finish_round "$n" "$report" "$log"
+  if grep -q '^GUARD FAIL' "$TD/guard-r$n.txt"; then
+    echo "BREAKER: round $n of $TID changed state outside its worktree (GUARD FAIL above). Treat it as a forbidden action and stop all work; only if you made that change yourself, record it with ledger.sh guard-ack $TID r$n \"<what you changed>\"."
+    (( rc != 0 )) || rc=5
+  fi
+  exit "$rc"
 }
 
 if [[ $mode == start ]]; then
@@ -86,13 +113,8 @@ if [[ $mode == start ]]; then
   quiet=()
   [[ $TASK_QUIET == no ]] || quiet=("$SKILL_DIR/templates/quiet.md")
   cat "$TD/task.md" "$TASKS_ROOT/common.md" "$instructions" "${quiet[@]}" > "$TD/prompt.md"
-  echo "round 1 start mode=$TASK_MODE sandbox=$sandbox $(stamp)" >> "$TD/rounds.log"
-  set +e
-  "${cmd[@]}" < "$TD/prompt.md" > "$TD/codex.log" 2>&1
-  rc=$?
-  set -e
-  finish_round 1 "$TD/report.md" "$TD/codex.log"
-  exit "$rc"
+  run_round 1 "$TD/report.md" "$TD/codex.log" "$TD/prompt.md" \
+    "round 1 start mode=$TASK_MODE sandbox=$sandbox" "${cmd[@]}"
 fi
 
 [[ -f $TD/codex.log ]] || die "$TD/codex.log is missing; nothing to resume"
@@ -127,10 +149,5 @@ if [[ $(realpath -m "$feedback") != "$(realpath -m "$target")" ]]; then
   cp "$feedback" "$target"
 fi
 git -C "$WT" reset -q
-echo "round $n resume $sid mode=$TASK_MODE sandbox=$sandbox $(stamp)" >> "$TD/rounds.log"
-set +e
-(cd "$WT" && "${cmd[@]}" < "$TD/feedback-r$n.md") > "$TD/codex-r$n.log" 2>&1
-rc=$?
-set -e
-finish_round "$n" "$TD/report-r$n.md" "$TD/codex-r$n.log"
-exit "$rc"
+run_round "$n" "$TD/report-r$n.md" "$TD/codex-r$n.log" "$TD/feedback-r$n.md" \
+  "round $n resume $sid mode=$TASK_MODE sandbox=$sandbox" "${cmd[@]}"

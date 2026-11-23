@@ -32,6 +32,7 @@ if (( ! reuse_task )) && { [[ -e $TD/rounds.log ]] || compgen -G "$TD/report*.md
   die "task directory $TD already holds an earlier task; choose a new task id (or pass --reuse-task to continue it)"
 fi
 mkdir -p "$WT_ROOT" "$TASKS_ROOT"
+planner_begin   # record the new branch and worktree for the guard of running rounds
 free=$(free_gb "$WT_ROOT")
 need=${MIN_FREE_GB}
 (( free >= need )) || die "only ${free} GiB free under $WT_ROOT (need $need); remove merged worktrees first"

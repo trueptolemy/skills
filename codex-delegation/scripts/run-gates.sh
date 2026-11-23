@@ -15,6 +15,9 @@
 #   docs         every changed file must match DOC_PATHS
 #   refactor     no existing file matching TEST_PATHS may be modified or deleted
 #   all others   optional "Allowed paths" scope, then every gate
+# In every mode, a round whose guard reported a change outside the worktree
+# (GUARD FAIL, see run-codex.sh) fails acceptance until ledger.sh guard-ack
+# records it as the planner's own change.
 # Added lines matching SUPPRESSION_PATTERN fail; SKIP_PATTERN matches are
 # reported as warnings for review.
 #
@@ -53,6 +56,7 @@ done
 task_paths "$tid"
 [[ -d $WT ]] || die "worktree $WT does not exist"
 task_header
+guard_settle
 out=$TD/gates-$label
 mkdir -p "$out"
 summary=$out/summary.txt
@@ -108,6 +112,13 @@ if [[ -n $TASK_ALLOWED && $TASK_MODE != investigate && $TASK_MODE != operate ]];
   done <<< "$changed"
   offenders "SCOPE" "${outside%$'\n'}"
   [[ -n $outside ]] || note "SCOPE    all staged files are within Allowed paths"
+fi
+
+guard=$(guard_failures)
+if [[ -n $guard ]]; then
+  offenders "GUARD" "$guard"
+else
+  note "GUARD    no round changed refs, worktree branches, shared git files or idle checkouts"
 fi
 
 count=0

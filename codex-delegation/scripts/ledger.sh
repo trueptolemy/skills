@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Mechanical ledger for the token-economy rules and circuit breakers.
 # Usage:
-#   ledger.sh full-read <task-id> <what>   record a full log/diff read BEFORE doing it
-#   ledger.sh status                        rounds, tokens, report and gate state per task
+#   ledger.sh full-read <task-id> <what>        record a full log/diff read BEFORE doing it
+#   ledger.sh guard-ack <task-id> r<N> <what>   record that a GUARD FAIL of round N was
+#                                               the planner's own change
+#   ledger.sh status                             rounds, tokens, report, guard and gate state
 #
 # full-read exits 3 once the count would exceed MAX_FULL_READS: do not perform
 # that read; stop all work and report. Targeted reads (summary lines, grep
 # results, `--stat`, named hunks) are not full reads and are not recorded.
+# guard-ack is only for a change you made yourself while the round ran (for
+# example a branch created by hand); a change Codex made is a forbidden action.
 
 source "$(dirname "$0")/lib.sh"
 cdl_load
@@ -26,8 +30,16 @@ case ${1:-} in
     echo "$(date -u +%FT%TZ) $TID $what" >> "$reads"
     echo "FULL READS $count/$MAX_FULL_READS recorded: $TID $what"
     ;;
+  guard-ack)
+    tid=${2:-}; round=${3:-}; what=${4:-}
+    [[ -n $tid && $round =~ ^r[0-9]+$ && -n $what ]] || die "usage: ledger.sh guard-ack <task-id> r<N> <what you changed>"
+    task_paths "$tid"
+    grep -q '^GUARD FAIL' "$TD/guard-$round.txt" 2>/dev/null || die "$TID $round has no GUARD FAIL to acknowledge"
+    echo "$(date -u +%FT%TZ) $what" > "$TD/guard-$round.ack"
+    echo "GUARD $TID $round recorded as a planner change: $what"
+    ;;
   status)
-    printf '%-14s %-12s %6s %12s  %-10s %s\n' TASK MODE ROUNDS TOKENS REPORT GATES
+    printf '%-14s %-12s %6s %12s  %-10s %-5s %s\n' TASK MODE ROUNDS TOKENS REPORT GUARD GATES
     total=0
     for dir in "$TASKS_ROOT"/*/; do
       [[ -f $dir/rounds.log ]] || continue
@@ -41,11 +53,15 @@ case ${1:-} in
       if [[ -n $latest ]]; then
         gates="$(basename "$latest") $(grep -m1 -oE '^RESULT [A-Z]+' "${latest%/}/summary.txt" || echo RUNNING)"
       fi
+      guard=-
+      compgen -G "$TD/guard-r*.txt" > /dev/null && guard=ok
+      compgen -G "$TD/guard-r*.ack" > /dev/null && guard=ack
+      [[ -z $(guard_failures) ]] || guard=FAIL
       total=$((total + tokens))
-      printf '%-14s %-12s %6s %12s  %-10s %s\n' "$tid" "${mode:-?}" "$rounds" "$tokens" "${status:-?}" "$gates"
+      printf '%-14s %-12s %6s %12s  %-10s %-5s %s\n' "$tid" "${mode:-?}" "$rounds" "$tokens" "${status:-?}" "$guard" "$gates"
     done
     used=$( [[ -f $reads ]] && wc -l < "$reads" || echo 0)
     echo "TOTAL tokens=$total full-reads=$used/$MAX_FULL_READS"
     ;;
-  *) die "usage: ledger.sh full-read <task-id> <what> | ledger.sh status" ;;
+  *) die "usage: ledger.sh full-read <task-id> <what> | guard-ack <task-id> r<N> <what> | status" ;;
 esac

@@ -221,10 +221,11 @@ start Codex only after they confirm it.
    `scripts/pipeline.sh start <id>` (Codex, then gates and diff checks), or
    `scripts/run-codex.sh start <id>` for Codex alone. Wait for the completion
    notification.
-4. Read the `REPORT STATUS=... lines=...` and
-   `CODEX model=... effort=... sandbox=... tokens=...` lines printed by
-   `run-codex.sh` (a sandbox, model or effort warning means the round did not
-   run as configured), then `report.md` (at most 80 lines).
+4. Read the `REPORT STATUS=... lines=...`,
+   `CODEX model=... effort=... sandbox=... tokens=...` and `GUARD` lines
+   printed by `run-codex.sh` (a sandbox, model or effort warning means the
+   round did not run as configured; a GUARD FAIL is a forbidden action, see
+   "Repository guard"), then `report.md` (at most 80 lines).
 5. Accept, following [review-checklist.md](reference/review-checklist.md):
    - read the gate summary `pipeline.sh` printed, or run
      `scripts/run-gates.sh <id> r<N>` in the background and read only
@@ -252,6 +253,28 @@ start Codex only after they confirm it.
    deliverable.
 8. Update your copy of `templates/ledger.md`; `scripts/ledger.sh status` gives
    the rounds, tokens and gate state to copy.
+
+## Repository guard
+
+Codex may change only the files of its own worktree. `run-codex.sh`
+snapshots the repository before and after every round and prints
+`GUARD PASS`, or one `GUARD FAIL` line for each change outside the worktree:
+
+- any ref except `refs/remotes` and `refs/prefetch`, which background fetches
+  move: a commit, reset or stash, a branch created or deleted;
+- the branch, or detached commit, of any worktree;
+- the shared git `config`, `info/exclude` or hooks;
+- tracked changes or untracked files in the main checkout, or in another task
+  worktree whose own task ran no round or gate run in the meantime.
+
+`new-task.sh` and `finish-task.sh` record the changes they make, so tasks
+running in parallel do not trip each other's guard. A GUARD FAIL makes
+`run-codex.sh` exit 5 and fails `run-gates.sh` and `finish-task.sh`. Treat it
+as a forbidden action and stop all work. Only if you made that change
+yourself while the round ran (for example a branch created by hand), record
+it with `ledger.sh guard-ack <id> r<N> "<what you changed>"`; never
+acknowledge a change you did not make. While rounds run, leave the main
+checkout and idle worktrees alone: every change there is reported.
 
 ## BLOCKED and PARTIAL
 
@@ -332,8 +355,9 @@ real-system operation through Codex with `Mode: operate` and an explicit
 
 ## Circuit breakers (defaults; the user may override)
 
-- A forbidden action, cheating to pass (rewritten expectations, suppressions)
-  or a gate regression the planner cannot explain: **stop all work**.
+- A forbidden action (including a GUARD FAIL you did not cause), cheating to
+  pass (rewritten expectations, suppressions) or a gate regression the
+  planner cannot explain: **stop all work**.
 - `MAX_ROUNDS` (default 3) Codex rounds for one task without acceptance: stop
   that task without committing. `run-codex.sh resume` refuses a further round
   with exit code 3.

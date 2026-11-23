@@ -30,6 +30,7 @@ cdl_load() {
   BASE_BRANCH=${BASE_BRANCH:-$(git -C "$REPO" symbolic-ref --short HEAD)}
   WT_ROOT=${WT_ROOT:-${REPO}-wt}
   TASKS_ROOT=${TASKS_ROOT:-${REPO}-tasks}
+  GUARD_PLANNER=$TASKS_ROOT/guard-planner.log
   GATES_FILE=${GATES_FILE:-$TASKS_ROOT/gates.txt}
   FOCUSED_GATES_FILE=${FOCUSED_GATES_FILE:-$TASKS_ROOT/focused.txt}
   SETUP_HOOK=${SETUP_HOOK:-}
@@ -186,6 +187,147 @@ codex_meta() {  # log, sandbox, [model], [effort]
   if [[ -n $want_effort && -n $effort && $effort != "$want_effort" ]]; then
     echo "CODEX WARNING: effort drift: expected $want_effort but the run reports $effort"
   fi
+}
+
+# --- Repository guard ------------------------------------------------------------
+# A round may change only the files of its own worktree. guard_snapshot writes,
+# one `key<TAB>value` line each, what a round must leave alone:
+#   ref:<name>     every ref except refs/remotes and refs/prefetch, which
+#                  background fetches move: commits, resets, stashes, branches
+#   head:<path>    the branch, or the detached commit, of every worktree
+#   git:<name>     the shared config, info/exclude and hooks
+#   status:<path>  the changes in the main checkout and in each task worktree,
+#                  after the activity of the worktree's own task
+# guard_check compares a round's two snapshots. A difference passes only when
+# a planner script recorded it (new-task.sh and finish-task.sh call
+# planner_begin) or, for a task worktree, when its own task ran a round or a
+# gate run in between, which changes that worktree legitimately.
+
+# Whether a task's latest round has started and not yet exited.
+round_running() {  # task directory
+  local last
+  last=$(grep -E '^round [0-9]+ (start|resume|exit) ' "$1/rounds.log" 2>/dev/null | tail -n 1 || true)
+  [[ -n $last && $last != *" exit "* ]]
+}
+
+# "busy" while a task's round or gate run is in progress, otherwise a hash of
+# its round and gate records, which changes with every round or gate run.
+task_activity() {  # task directory
+  local td=$1 sum
+  round_running "$td" && { echo busy; return; }
+  for sum in "$td"/gates-*/summary.txt; do
+    [[ ! -f $sum || $(tail -n 1 "$sum") == DONE ]] || { echo busy; return; }
+  done
+  { cat "$td/rounds.log" "$td"/gates-*/summary.txt 2>/dev/null || true; } | git hash-object --stdin
+}
+
+guard_snapshot() {  # output file
+  local common wt_root path branch real kind first=1 f
+  common=$(cd "$REPO" && cd "$(git rev-parse --git-common-dir)" && pwd)
+  wt_root=$(cd "$WT_ROOT" 2>/dev/null && pwd -P || echo "$WT_ROOT")
+    {
+    printf '#planner\t%s\n' "$( [[ -f $GUARD_PLANNER ]] && wc -l < "$GUARD_PLANNER" | tr -d ' ' || echo 0)"
+    git -C "$REPO" for-each-ref --format='ref:%(refname)%09%(objectname)' |
+      grep -vE '^ref:refs/(remotes|prefetch)/' || true
+    for f in config info/exclude; do
+      printf 'git:%s\t%s\n' "$f" "$( [[ -f $common/$f ]] && git hash-object --no-filters "$common/$f" || echo absent)"
+    done
+    printf 'git:hooks\t%s\n' "$( { cd "$common" && find hooks -type f 2>/dev/null | LC_ALL=C sort |
+      while IFS= read -r f; do echo "$(git hash-object --no-filters "$f") $f"; done; } | git hash-object --stdin)"
+    git -C "$REPO" worktree list --porcelain | awk -v OFS='\t' '
+      /^worktree / { path = substr($0, 10) }
+      /^HEAD / { head = $2 }
+      /^branch / { branch = $2 }
+      /^detached/ { branch = "detached " head }
+      /^$/ { if (path != "") print path, branch; path = branch = "" }
+      END { if (path != "") print path, branch }' |
+    while IFS=$'\t' read -r path branch; do
+      real=$(cd "$path" 2>/dev/null && pwd -P || echo "$path")
+      printf 'head:%s\t%s\n' "$real" "$branch"
+      if (( first )); then kind=main
+      elif [[ ${real%/*} == "$wt_root" ]]; then kind=$(task_activity "$TASKS_ROOT/${real##*/}")
+      else kind=""; fi
+      first=0
+      [[ -n $kind ]] || continue
+      printf 'status:%s\t%s %s\n' "$real" "$kind" "$( { GIT_OPTIONAL_LOCKS=0 git -C "$path" status --porcelain -uall &&
+        git -C "$path" diff HEAD --binary; } 2>/dev/null | git hash-object --stdin)"
+    done
+  } > "$1"
+}
+
+# key<TAB>before<TAB>after for every key whose value differs ("absent" when
+# a key exists on one side only).
+guard_diff() {  # before, after
+  awk -F'\t' -v OFS='\t' '
+    /^#/ { next }
+    FILENAME == ARGV[1] { a[$1] = $2; next }
+    { b[$1] = $2 }
+    END {
+      for (k in a) if (!(k in b)) print k, a[k], "absent"; else if (a[k] != b[k]) print k, a[k], b[k]
+      for (k in b) if (!(k in a)) print k, "absent", b[k]
+    }' "$1" "$2" | LC_ALL=C sort
+}
+
+# Planner scripts that change refs, worktrees or shared git files record their
+# own differences, so a round running in parallel does not report them.
+planner_begin() {
+  PLANNER_BEFORE=$TASKS_ROOT/.planner-$$.before
+  guard_snapshot "$PLANNER_BEFORE"
+  trap planner_end EXIT
+}
+planner_end() {
+  guard_snapshot "$TASKS_ROOT/.planner-$$.after"
+  guard_diff "$PLANNER_BEFORE" "$TASKS_ROOT/.planner-$$.after" | cut -f1,3 >> "$GUARD_PLANNER"
+  rm -f "$PLANNER_BEFORE" "$TASKS_ROOT/.planner-$$.after"
+}
+
+guard_short() {  # abbreviate a commit id, alone or after "detached "
+  if [[ $1 =~ ^(detached )?([0-9a-f]{12})[0-9a-f]{28,}$ ]]; then echo "${BASH_REMATCH[1]}${BASH_REMATCH[2]}"; else echo "$1"; fi
+}
+
+# Write round N's verdict to guard-rN.txt: GUARD PASS, or one GUARD FAIL line
+# per difference nobody accounted for. A round that ended without its second
+# snapshot (a stopped job) is compared with the current state.
+guard_check() {  # round
+  local n=$1 before=$TD/guard-r$n.before after=$TD/guard-r$n.after out=$TD/guard-r$n.txt
+  local offset recorded key old new
+  [[ -f $after ]] || guard_snapshot "$after"
+  offset=$(awk -F'\t' '$1 == "#planner" { print $2 }' "$before")
+  recorded=$(tail -n +"$((${offset:-0} + 1))" "$GUARD_PLANNER" 2>/dev/null || true)
+  : > "$out"
+  while IFS=$'\t' read -r key old new; do
+    if [[ $key == status:* ]]; then
+      [[ $old != absent && $new != absent && ${old%% *} != busy && ${old%% *} == "${new%% *}" ]] || continue
+    fi
+    grep -qxF "$key"$'\t'"$new" <<< "$recorded" && continue
+    case $key in
+      ref:*|head:*) echo "GUARD FAIL $key $(guard_short "$old") -> $(guard_short "$new")" ;;
+      *) echo "GUARD FAIL $key changed" ;;
+    esac >> "$out"
+  done < <(guard_diff "$before" "$after")
+  [[ -s $out ]] || echo "GUARD PASS refs, worktree branches, shared git files and idle checkouts unchanged" > "$out"
+}
+
+# Give every round of the task that has no verdict yet its verdict.
+guard_settle() {
+  local f n
+  for f in "$TD"/guard-r*.before; do
+    [[ -f $f ]] || continue
+    n=${f##*/guard-r}; n=${n%.before}
+    [[ -f $TD/guard-r$n.txt ]] || guard_check "$n"
+  done
+}
+
+# The task's GUARD FAIL lines that ledger.sh guard-ack has not acknowledged,
+# as `rN <what changed>`.
+guard_failures() {
+  local f n
+  for f in "$TD"/guard-r*.txt; do
+    [[ -f $f ]] || continue
+    n=${f##*/guard-r}; n=${n%.txt}
+    [[ ! -f $TD/guard-r$n.ack ]] || continue
+    sed -n "s/^GUARD FAIL /r$n /p" "$f"
+  done
 }
 
 # The next unused round number for a task, counting report.md as round 1.

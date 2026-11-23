@@ -23,7 +23,8 @@ task() {  # id mode [allowed]
 # reasoning effort, session id) and a final `tokens used` count. It honours -m
 # and the -c keys the scripts pass. `exec` edits the worktree unless
 # FAKE_NO_EDIT is set; FAKE_SANDBOX and FAKE_MODEL make the header lie;
-# FAKE_BAD_REPORT writes a report without STATUS that is too long.
+# FAKE_BAD_REPORT writes a report without STATUS that is too long;
+# FAKE_DURING is a shell command run during the round (FAKE_WT = worktree).
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/codex" <<'EOF'
 #!/usr/bin/env bash
@@ -59,6 +60,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 (( ! stdin )) || cat > /dev/null
+[[ -z ${FAKE_DURING:-} ]] || FAKE_WT=$wt bash -c "$FAKE_DURING"
 printf 'OpenAI Codex v0.0.0-fake\n--------\nworkdir: %s\nmodel: %s\nprovider: fake\napproval: %s\nsandbox: %s [workdir]\nreasoning effort: %s\nsession id: 0123abcd-1111-2222-3333-444455556666\n--------\n' \
   "$wt" "${FAKE_MODEL:-$model}" "$approval" "${FAKE_SANDBOX:-$sandbox}" "$effort"
 if [[ $prompt == *"exactly the word OK"* ]]; then echo OK > "$report"; printf 'tokens used\n12\n'; exit 0; fi
@@ -153,6 +155,7 @@ task T1 implement "feature.txt, src/*"
 grep -q "REPORT STATUS=DONE lines=2" "$tmp/start.out" || fail "report check"
 grep -q "CODEX model=fake-model effort=high sandbox=workspace-write tokens=1234" "$tmp/start.out" || fail "codex meta"
 grep -q "# Mode: implement" "$tasks/T1/prompt.md" || fail "mode instructions in prompt"
+grep -q "round 1 GUARD PASS" "$tmp/start.out" || fail "a plain round passes the guard"
 expect_fail "$scripts/run-codex.sh" start T1
 ok "run-codex start appends mode instructions and records report shape, sandbox and tokens"
 
@@ -248,6 +251,46 @@ ok "pipeline runs Codex then the full or focused gate list; gates see CHANGED_FI
 grep -q "PIPELINE gates skipped" "$tmp/p3.out" && grep -q "# Quiet task" "$tasks/T4/prompt.md" || fail "quiet task: $(cat "$tmp/p3.out")"
 [[ ! -d $tasks/T4/gates-r1 ]] || fail "quiet task must not run gates"
 ok "a Quiet task gets the no-test instructions and the pipeline runs no gates"
+
+# --- repository guard -----------------------------------------------------------
+"$scripts/new-task.sh" G1 guard/g1 > /dev/null
+task G1 implement
+rc=0
+FAKE_DURING='git -C "$FAKE_WT" commit -q --allow-empty -m sneaky' "$scripts/run-codex.sh" start G1 > "$tmp/g1.out" 2>&1 || rc=$?
+(( rc == 5 )) && grep -q "GUARD FAIL ref:refs/heads/guard/g1 " "$tmp/g1.out" || fail "a commit by Codex must fail the guard (rc=$rc): $(cat "$tmp/g1.out")"
+grep -q "BREAKER: round 1 of G1 changed state outside its worktree" "$tmp/g1.out" || fail "guard breaker line"
+expect_fail "$scripts/run-gates.sh" G1 r1
+summary G1 r1 | grep -q "^GUARD r1 ref:refs/heads/guard/g1 " || fail "gates must report the guard failure"
+expect_fail "$scripts/finish-task.sh" G1 "$tmp/msg.txt"
+grep -q "changed state outside its worktree" "$tmp/last.out" || fail "finish must refuse a guard failure"
+ok "a commit made during a round fails the guard, the gates and delivery"
+
+"$scripts/new-task.sh" G2 guard/g2 > /dev/null
+task G2 implement
+hook=$repo/.git/hooks/pre-commit
+FAKE_DURING="echo stray >> '$repo/README.md'; echo x > '$tmp/repo-wt/T2/other.txt'; printf '#!/bin/sh\n' > '$hook'" \
+  "$scripts/run-codex.sh" start G2 > "$tmp/g2.out" 2>&1 || true
+grep -q "GUARD FAIL status:$(cd "$repo" && pwd -P) changed" "$tmp/g2.out" || fail "main checkout change: $(cat "$tmp/g2.out")"
+grep -q "GUARD FAIL status:$(cd "$tmp/repo-wt/T2" && pwd -P) changed" "$tmp/g2.out" || fail "idle worktree change: $(cat "$tmp/g2.out")"
+grep -q "GUARD FAIL git:hooks changed" "$tmp/g2.out" || fail "hook change: $(cat "$tmp/g2.out")"
+git -C "$repo" checkout -q README.md; rm "$tmp/repo-wt/T2/other.txt" "$hook"
+"$scripts/new-task.sh" G3 guard/g3 > /dev/null
+task G3 implement
+FAKE_DURING="git -C '$repo' branch by-hand" "$scripts/run-codex.sh" start G3 > "$tmp/g3.out" 2>&1 || true
+grep -q "GUARD FAIL ref:refs/heads/by-hand absent -> " "$tmp/g3.out" || fail "new branch: $(cat "$tmp/g3.out")"
+expect_fail "$scripts/ledger.sh" guard-ack T3 r1 "nothing to acknowledge"
+"$scripts/ledger.sh" guard-ack G3 r1 "planner created branch by-hand" > /dev/null
+"$scripts/run-gates.sh" G3 r1 > /dev/null || fail "an acknowledged planner change passes: $(summary G3 r1)"
+ok "changes to the main checkout, an idle worktree, hooks or refs fail the guard; guard-ack records the planner's own change"
+
+"$scripts/new-task.sh" G4 guard/g4 > /dev/null
+task G4 implement
+FAKE_DURING="'$scripts/new-task.sh' G5 guard/g5 && '$scripts/run-gates.sh' T4 r1 && '$scripts/finish-task.sh' T4 '$tmp/msg.txt'" \
+  "$scripts/run-codex.sh" start G4 > "$tmp/g4.out" || fail "parallel planner work: $(cat "$tmp/g4.out")"
+grep -q "round 1 GUARD PASS" "$tmp/g4.out" && [[ ! -d $tmp/repo-wt/T4 ]] || fail "parallel planner work must pass the guard: $(cat "$tmp/g4.out")"
+"$scripts/ledger.sh" status > "$tmp/gstatus.out"
+grep -qE '^G1 .* FAIL ' "$tmp/gstatus.out" && grep -qE '^G3 .* ack ' "$tmp/gstatus.out" && grep -qE '^G4 .* ok ' "$tmp/gstatus.out" || fail "ledger guard column: $(cat "$tmp/gstatus.out")"
+ok "new-task, gates and delivery of other tasks during a round pass the guard"
 
 # --- investigate mode ----------------------------------------------------------
 "$scripts/new-task.sh" Q1 inv/q1 > /dev/null

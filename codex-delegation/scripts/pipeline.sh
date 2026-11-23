@@ -42,7 +42,7 @@ set +e
 out=$("$here/run-codex.sh" "${cargs[@]}" 2>&1)
 rc=$?
 set -e
-grep -E 'REPORT|CODEX|WARN|HINT|BREAKER|error' <<< "$out" | cut -c1-200 || true
+grep -E 'REPORT|CODEX|GUARD|WARN|HINT|BREAKER|error' <<< "$out" | cut -c1-300 || true
 echo "PIPELINE codex rc=$rc"
 (( rc == 0 )) || exit "$rc"
 
@@ -62,7 +62,7 @@ set +e
 set -e
 sum=$TD/gates-$label/summary.txt
 [[ -f $sum ]] || { echo "PIPELINE gates produced no summary; see $TD/gates-$label.out"; exit 2; }
-grep -E 'fail:|SCOPE|SUPPRESS|TESTEDIT|NONDOC|NOGATES|BADLINE|WARNING|rc=[1-9]' "$sum" | head -n 12 | cut -c1-200 || true
+grep -E 'fail:|SCOPE|GUARD r|SUPPRESS|TESTEDIT|NONDOC|NOGATES|BADLINE|WARNING|rc=[1-9]' "$sum" | head -n 12 | cut -c1-200 || true
 tail -n 2 "$sum"
 
 cd "$WT"

@@ -29,12 +29,14 @@ scripts/
   new-task.sh            worktree, branch and task directory (disk check, setup hook, clean check)
   run-codex.sh           start, resume or continue Codex in the background with the same
                          arguments every round; mode sandbox, round breaker, report shape,
-                         applied sandbox, model and effort drift, token count
+                         applied sandbox, model and effort drift, token count, and a
+                         repository guard (refs, branches, shared git files, other checkouts)
   run-gates.sh           mode checks, scope, full or focused gates with CHANGED_FILES,
                          suppressions, skip markers; summary ends with DONE
   pipeline.sh            one background round: Codex, then gates and diff checks
   finish-task.sh         require PASS, check the message, commit, deliver, remove the worktree
-  ledger.sh              full-read breaker and per-task rounds, tokens and gate state
+  ledger.sh              full-read breaker, guard-ack, and per-task rounds, tokens,
+                         guard and gate state
   lib.sh                 shared configuration and helpers
 templates/
   codex-delegation.conf  per-project configuration
@@ -143,6 +145,9 @@ breakers are in [SKILL.md](SKILL.md).
   network for its commands, and no write access to the shared `.git`, so it
   cannot commit. The main session commits. Only an operate task, with an
   explicit `Sandbox:` line the user authorized, may run with full access.
+- After every round a guard compares the repository's refs, worktree
+  branches, shared git files and other checkouts with their state before the
+  round. Any change outside the task's worktree fails acceptance and delivery.
 - The scripts never push, never use sudo, and call no model except the
   configured Codex in `run-codex.sh`.
 - `finish-task.sh` commits only when the newest gate summary says

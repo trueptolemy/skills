@@ -20,6 +20,10 @@ Count every full log or full diff read made for diagnosis.
       an API error and use `run-codex.sh continue`, not a new feedback. After
       an API error, first close Codex and run
       `codex app-server daemon restart`.
+- [ ] Every round printed `GUARD PASS`, and the summary's `GUARD` line
+      names no round. A `GUARD FAIL` (a commit, a branch change, edited
+      shared git files or another checkout changed) is a forbidden action;
+      `ledger.sh guard-ack` is only for a change you made yourself.
 - [ ] The first gate (harness or import-path check) passed, so the run tested
       this worktree.
 - [ ] `SUPPRESSIONS added=0`, and generated output (build artifacts) matches
