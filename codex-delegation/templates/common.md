@@ -19,10 +19,24 @@ You do all investigation the task needs; report what you established.
 
 ## Forbidden
 
+You may run without a sandbox. These rules are then the only boundary. After
+every round the planner checks the repository's refs, worktree branches,
+shared git files and other checkouts, and any change there fails the task.
+
 - [Real-system work: deployments, hardware runs, production databases, ...].
+- `ssh`, `scp`, `rsync` over ssh or any other remote access to another host,
+  in particular [the real systems: systems under test, production hosts],
+  unless this is an operate task that names the host and the commands.
 - `sudo` or any privilege escalation.
-- `git commit`, `git push`, `git merge`, `git rebase`, `git stash`, branch
-  changes, or edits under `.git`. Leave every change in the working tree.
+- `git commit`, `git push`, `git merge`, `git rebase`, `git stash`,
+  `git reset`, `git checkout` or `git switch` of another branch or commit,
+  `git worktree`, `git config`, installing git hooks, or any other edit under
+  `.git`. Leave every change in the working tree.
+- Writing outside this worktree: other worktrees, the main checkout, the home
+  directory (`~/.ssh`, shell profiles, tool and Codex configuration) or
+  system locations.
+- Installing, upgrading or removing packages or tools, in a shared
+  environment or globally. Report a missing dependency under OPEN QUESTIONS.
 - Any model or provider call, nested agent session, or network access from
   tests and scripts. Do not use web search: the repository, its documents and
   this task contain what you need; ask under OPEN QUESTIONS instead.

@@ -6,12 +6,13 @@ Allowed paths: src/<area>/*, tests/<area>/*, docs/<owning-document>.md
 <!-- Header fields are read by the scripts from the first 30 lines.
      Mode: implement | refactor | docs | investigate | operate
        investigate runs read-only; operate runs an authorized real-system stage
-       and needs an explicit Sandbox line (danger-full-access is allowed only there).
+       and needs an explicit Sandbox line.
      Allowed paths: optional comma-separated globs; `*` also matches '/'. A staged
        file outside them fails acceptance. Cover the owning modules and their
        adjacent selection and entry modules; name sibling tasks' files to avoid
        instead of narrowing the list. Remove the line to disable the check.
-     Sandbox: optional read-only | workspace-write override.
+     Sandbox: optional read-only | workspace-write | danger-full-access override;
+       danger-full-access needs Mode: operate or ALLOW_FULL_ACCESS=yes.
      Quiet: yes when a measurement runs on the same host; Codex then runs no
        tests or builds and the pipeline runs no gates for that round. -->
 

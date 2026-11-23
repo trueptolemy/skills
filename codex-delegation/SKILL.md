@@ -47,7 +47,7 @@ optional sandbox override and an optional quiet flag; the scripts read them:
 ```text
 Mode: implement | refactor | docs | investigate | operate
 Allowed paths: src/area/*, tests/area/*, docs/area.md
-Sandbox: read-only | workspace-write | danger-full-access (operate only)
+Sandbox: read-only | workspace-write | danger-full-access
 Quiet: yes
 ```
 
@@ -72,6 +72,37 @@ and cannot change the tree. Override a mode's instructions per project in
 operate stage uses the same host. `run-codex.sh` appends `templates/quiet.md`
 (no tests, builds or benchmarks) and `pipeline.sh` runs no gates. Code written
 this way usually fails its first focused check, so budget one more round.
+
+## Permissions: full access and what replaces the sandbox
+
+The configuration template runs the write modes (implement, refactor, docs)
+with `CODEX_SANDBOX=danger-full-access` and `ALLOW_FULL_ACCESS=yes`. Every
+round runs with approval policy `never`: Codex installs, builds, tests and
+uses the network like a developer, and nothing waits for an approval nobody
+can give. Without `ALLOW_FULL_ACCESS=yes` the scripts refuse full access
+outside operate tasks, both as `CODEX_SANDBOX` and in a task's `Sandbox:`
+line. Investigate tasks stay read-only unless their task.md says otherwise.
+They must not write anything anyway.
+
+`codex exec` is non-interactive and has no `--ask-for-approval` flag. The
+scripts therefore pass `-c sandbox_mode="..."` and
+`-c approval_policy="never"`, which `codex exec` and `codex exec resume` both
+accept. `--dangerously-bypass-approvals-and-sandbox` would set both at once,
+but it cannot keep investigate tasks read-only. After a CLI upgrade, run
+`doctor.sh` and, with the user's approval, `doctor.sh --smoke`.
+
+What the sandbox guaranteed, and what replaces it:
+
+| workspace-write guarantee | Under danger-full-access |
+|---|---|
+| No commit, branch change or `.git` edit | The repository guard after every round (refs, branches, config, exclude, hooks) |
+| The main checkout and other worktrees stay untouched | The repository guard (main checkout and idle task worktrees) |
+| No ssh to real systems | `common.md` forbids it outside operate tasks. Those rounds also run without `SSH_AUTH_SOCK` and with git over ssh refused, but a key file that ssh reads directly is not blocked |
+| No writes to the home directory (`~/.ssh`, tool configuration) | `common.md` only; not checked |
+| No network for commands | `common.md` forbids network access from tests and scripts, and web search; not checked |
+
+Set `CODEX_SANDBOX=workspace-write` for a project where the rows that rest on
+rules alone are not acceptable.
 
 ## Gates: focused checks per round, one full gate per delivery
 

@@ -36,6 +36,15 @@ cdl_load() {
   SETUP_HOOK=${SETUP_HOOK:-}
   MIN_FREE_GB=${MIN_FREE_GB:-3}
   CODEX_SANDBOX=${CODEX_SANDBOX:-workspace-write}
+  ALLOW_FULL_ACCESS=${ALLOW_FULL_ACCESS:-no}
+  case $ALLOW_FULL_ACCESS in yes|no) ;; *) die "ALLOW_FULL_ACCESS must be yes or no (got $ALLOW_FULL_ACCESS)" ;; esac
+  case $CODEX_SANDBOX in
+    read-only|workspace-write) ;;
+    danger-full-access)
+      [[ $ALLOW_FULL_ACCESS == yes ]] ||
+        die "CODEX_SANDBOX=danger-full-access needs ALLOW_FULL_ACCESS=yes in $conf (see SKILL.md, Permissions)" ;;
+    *) die "CODEX_SANDBOX must be read-only, workspace-write or danger-full-access (got $CODEX_SANDBOX)" ;;
+  esac
   CODEX_MODEL=${CODEX_MODEL:-}
   CODEX_EFFORT=${CODEX_EFFORT:-}
   CODEX_EXTRA_ARGS=${CODEX_EXTRA_ARGS:-}
@@ -65,8 +74,9 @@ task_paths() {
 # Read the task header fields from the first 30 lines of task.md:
 #   Mode: implement|refactor|docs|investigate|operate (default implement)
 #   Allowed paths: src/foo/*, tests/test_foo*      (optional scope globs)
-#   Sandbox: read-only|workspace-write             (optional override;
-#            operate requires it and also accepts danger-full-access)
+#   Sandbox: read-only|workspace-write|danger-full-access   (optional override;
+#            operate requires it; danger-full-access needs operate mode or
+#            ALLOW_FULL_ACCESS=yes)
 #   Quiet: yes                                     (no test runs; see quiet.md)
 task_header() {
   local file=$TD/task.md value
@@ -87,9 +97,10 @@ task_header() {
     "") ;;
     read-only|workspace-write) TASK_SANDBOX=$value ;;
     danger-full-access)
-      [[ $TASK_MODE == operate ]] || die "task.md Sandbox danger-full-access is allowed only in operate mode"
+      [[ $TASK_MODE == operate || $ALLOW_FULL_ACCESS == yes ]] ||
+        die "task.md Sandbox danger-full-access needs Mode: operate or ALLOW_FULL_ACCESS=yes in the configuration"
       TASK_SANDBOX=$value ;;
-    *) die "task.md Sandbox '$value' must be read-only, workspace-write or (operate only) danger-full-access" ;;
+    *) die "task.md Sandbox '$value' must be read-only, workspace-write or danger-full-access" ;;
   esac
   # An operate task acts on a real system; its sandbox is always an explicit,
   # user-authorized choice, never a default.
@@ -152,16 +163,29 @@ report_check() {
 # The Codex arguments of every round of a task, start and resume alike, in
 # CODEX_ARGS. A resumed round given fewer arguments falls back to the global
 # Codex configuration, so it silently runs another model, effort or sandbox.
+# The approval policy is always never: `codex exec` cannot ask anyone, and it
+# has no --ask-for-approval flag, so the policy is passed with -c like the
+# sandbox.
 # Only flags that both `codex exec` and `codex exec resume` accept belong here
 # (doctor.sh checks CODEX_EXTRA_ARGS against both); the start round adds -C,
 # and resume, which has no --cd, runs from the worktree instead.
 codex_args() {  # sandbox
   local extra=()
   read -ra extra <<< "$CODEX_EXTRA_ARGS"
-  CODEX_ARGS=(-c "sandbox_mode=\"$1\"")
+  CODEX_ARGS=(-c "sandbox_mode=\"$1\"" -c 'approval_policy="never"')
   [[ -z $CODEX_MODEL ]] || CODEX_ARGS+=(-m "$CODEX_MODEL")
   [[ -z $CODEX_EFFORT ]] || CODEX_ARGS+=(-c "model_reasoning_effort=\"$CODEX_EFFORT\"")
   CODEX_ARGS+=("${extra[@]}")
+}
+
+# The environment prefix of every Codex round, in CODEX_ENV. Outside operate
+# tasks Codex gets no ssh agent and git refuses ssh transport, so a round
+# cannot reach a real system or push through keys the agent holds. This does
+# not stop ssh with a key file it reads directly; common.md forbids that.
+codex_env() {
+  CODEX_ENV=(env)
+  [[ $TASK_MODE == operate ]] ||
+    CODEX_ENV+=(-u SSH_AUTH_SOCK 'GIT_SSH_COMMAND=echo "codex-delegation: ssh is disabled outside operate tasks" >&2; false')
 }
 
 # Extract the run header and token count from one Codex log. codex-cli prints
@@ -171,15 +195,19 @@ codex_args() {  # sandbox
 # sandbox, model or effort differs from the expected one; an empty
 # expectation is not checked.
 codex_meta() {  # log, sandbox, [model], [effort]
-  local log=$1 want_sandbox=$2 want_model=${3:-} want_effort=${4:-} header sandbox model effort tokens
+  local log=$1 want_sandbox=$2 want_model=${3:-} want_effort=${4:-} header sandbox model effort approval tokens
   header=$(head -n 40 "$log" | awk '/^--------$/ { if (++n == 2) exit } { print }')
   sandbox=$(sed -n 's/^sandbox:[[:space:]]*\([a-z-]*\).*/\1/p' <<< "$header" | head -n 1)
   model=$(sed -n 's/^model:[[:space:]]*//p' <<< "$header" | head -n 1)
   effort=$(sed -n 's/^reasoning effort:[[:space:]]*//p' <<< "$header" | head -n 1)
+  approval=$(sed -n 's/^approval:[[:space:]]*//p' <<< "$header" | head -n 1)
   tokens=$(grep -A1 '^tokens used' "$log" | tail -n 1 | tr -dc '0-9' || true)
   echo "CODEX model=${model:-unknown} effort=${effort:-unknown} sandbox=${sandbox:-unknown} tokens=${tokens:-unknown}"
   if [[ -n $sandbox && $sandbox != "$want_sandbox" ]]; then
     echo "CODEX WARNING: requested sandbox $want_sandbox but the run reports $sandbox"
+  fi
+  if [[ -n $approval && $approval != never ]]; then
+    echo "CODEX WARNING: requested approval policy never but the run reports $approval"
   fi
   if [[ -n $want_model && -n $model && $model != "$want_model" ]]; then
     echo "CODEX WARNING: model drift: expected $want_model but the run reports $model"

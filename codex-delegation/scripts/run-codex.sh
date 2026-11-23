@@ -10,8 +10,11 @@
 # `&` plus `pgrep -f`: a waiter whose command line contains the pattern matches
 # itself and never exits.
 #
-# The task.md header selects the mode (implement, refactor, docs, investigate)
-# and therefore the sandbox: investigate runs read-only. The prompt is
+# The task.md header selects the mode (implement, refactor, docs, investigate,
+# operate) and therefore the sandbox: write modes use CODEX_SANDBOX,
+# investigate runs read-only and operate names its own. Every round runs with
+# approval policy never; outside operate tasks it also runs without an ssh
+# agent and with git over ssh refused (codex_env in lib.sh). The prompt is
 # task.md + common.md + the mode instructions, plus quiet.md when the task
 # header says `Quiet: yes` (a measurement on the same host forbids test runs).
 # start  writes report.md and codex.log.
@@ -56,6 +59,7 @@ command -v codex >/dev/null || die "codex CLI not found on PATH"
 task_header
 sandbox=$(task_sandbox)
 codex_args "$sandbox"
+codex_env
 instructions=$(mode_file "$TASK_MODE")
 [[ -s $instructions ]] || die "mode instructions $instructions are missing"
 dry=0
@@ -106,7 +110,7 @@ if [[ $mode == start ]]; then
   [[ -s $TD/task.md ]] || die "$TD/task.md is empty"
   [[ -s $TASKS_ROOT/common.md ]] || die "$TASKS_ROOT/common.md is missing"
   [[ ! -e $TD/report.md ]] || die "$TD/report.md exists; use resume, or move it away to restart"
-  cmd=(codex exec -C "$WT" "${CODEX_ARGS[@]}" -o "$TD/report.md" -)
+  cmd=("${CODEX_ENV[@]}" codex exec -C "$WT" "${CODEX_ARGS[@]}" -o "$TD/report.md" -)
   if (( dry )); then
     show "${cmd[@]}"; echo "stdin: task.md + common.md + $instructions"; exit 0
   fi
@@ -142,7 +146,7 @@ if (( n > MAX_ROUNDS )); then
   echo "Stop this task without committing, keep its worktree and report its state." >&2
   exit 3
 fi
-cmd=(codex exec resume "${CODEX_ARGS[@]}" -o "$TD/report-r$n.md" "$sid" -)
+cmd=("${CODEX_ENV[@]}" codex exec resume "${CODEX_ARGS[@]}" -o "$TD/report-r$n.md" "$sid" -)
 if (( dry )); then show "${cmd[@]}"; echo "cwd: $WT; stdin: $feedback; round $n"; exit 0; fi
 target=$TD/feedback-r$n.md
 if [[ $(realpath -m "$feedback") != "$(realpath -m "$target")" ]]; then

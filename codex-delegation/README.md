@@ -141,10 +141,13 @@ breakers are in [SKILL.md](SKILL.md).
 
 ## Safety boundaries
 
-- Codex runs in the `workspace-write` sandbox: writes only in the worktree, no
-  network for its commands, and no write access to the shared `.git`, so it
-  cannot commit. The main session commits. Only an operate task, with an
-  explicit `Sandbox:` line the user authorized, may run with full access.
+- Write modes run in the sandbox that `CODEX_SANDBOX` names, and every round
+  runs with approval policy `never`. The configuration template uses
+  `danger-full-access` and sets `ALLOW_FULL_ACCESS=yes`; without that opt-in,
+  the scripts refuse full access outside operate tasks. Investigate tasks run
+  read-only. SKILL.md ("Permissions") lists what replaces the sandbox's
+  guarantees: the repository guard, rules in `common.md`, and no ssh agent and
+  no git over ssh outside operate tasks. The main session commits.
 - After every round a guard compares the repository's refs, worktree
   branches, shared git files and other checkouts with their state before the
   round. Any change outside the task's worktree fails acceptance and delivery.

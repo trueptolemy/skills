@@ -225,9 +225,17 @@ branches and combined integration gates.
   drift. Extra flags must be ones `codex exec resume` accepts too; `doctor.sh`
   checks them.
 
-**Codex cannot commit.**
-- The workspace-write sandbox cannot write the shared `.git`. That is good: the
-  planner commits.
+**`codex exec` rejects `--ask-for-approval`.**
+- Trap: `codex exec --ask-for-approval never` (or `-a never`) fails with
+  "unexpected argument". The flag belongs to the interactive CLI;
+  `codex exec` never asks for approval.
+- Fix: pass `-c approval_policy="never"`, which `codex exec` and
+  `codex exec resume` both accept, as the scripts do for every round.
+
+**Who may commit.**
+- Under workspace-write, Codex cannot write the shared `.git`. Under
+  danger-full-access it can, and only `common.md` and the repository guard
+  stop it. The planner commits.
 - Consequence: tracked-file checks do not see files Codex created, so stage the
   tree before running gates in acceptance.
 
@@ -311,8 +319,9 @@ branches and combined integration gates.
 **The requested sandbox is not the applied one.**
 - Trap: a wrong flag, a configuration default or a CLI change can run a task
   with more write access than its mode allows.
-- Fix: `run-codex.sh` reads the `sandbox:` line of the Codex log header and
-  warns when it differs from the request; check it before accepting.
+- Fix: `run-codex.sh` reads the `sandbox:` and `approval:` lines of the Codex
+  log header and warns when they differ from the request; check them before
+  accepting.
 
 **Tests are skipped instead of fixed.**
 - Trap: adding a skip marker turns a failing test into a passing gate without

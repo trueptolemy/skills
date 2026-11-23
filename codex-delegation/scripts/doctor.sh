@@ -38,7 +38,7 @@ if command -v codex >/dev/null; then
   for flag in --cd --config --model --output-last-message; do
     grep -q -- "$flag" <<< "$help" && pass "codex exec supports $flag" || fail "codex exec lacks $flag"
   done
-  for value in read-only workspace-write; do
+  for value in read-only workspace-write danger-full-access; do
     grep -q -- "$value" <<< "$help" && pass "codex sandbox mode $value exists" || fail "codex sandbox mode $value is missing"
   done
   rhelp=$(codex exec resume --help 2>&1 || true)
@@ -73,7 +73,7 @@ project_checks() {
   fi
   if [[ -s $TASKS_ROOT/common.md ]]; then
     echo "PASS  common rules $TASKS_ROOT/common.md"
-    if grep -qE '\[(AGENTS|Real-system|private paths|Interpreter)' "$TASKS_ROOT/common.md"; then
+    if grep -qE '\[(AGENTS|Real-system|the real systems|private paths|Interpreter)' "$TASKS_ROOT/common.md"; then
       echo "WARN  common.md still contains template placeholders"
     fi
   else
@@ -93,6 +93,7 @@ project_checks() {
   done
   codex_args "$CODEX_SANDBOX"
   echo "PASS  every round passes:$(printf ' %q' "${CODEX_ARGS[@]}")"
+  echo "PASS  sandbox: write modes $CODEX_SANDBOX (ALLOW_FULL_ACCESS=$ALLOW_FULL_ACCESS), investigate read-only, operate per task"
   if [[ -n $SETUP_HOOK && ! -x $SETUP_HOOK ]]; then
     echo "FAIL  setup hook $SETUP_HOOK is not executable"
   fi
@@ -125,6 +126,7 @@ if (( smoke )) && command -v codex >/dev/null; then
     echo "smoke $(head -n 1 <<< "$meta")"
     grep -q '^session id:' "$dir/log.txt" && pass "log has a 'session id:' line" || fail "log lacks 'session id:'"
     grep -q '^sandbox: read-only' "$dir/log.txt" && pass "log reports the requested read-only sandbox" || fail "log does not report sandbox: read-only"
+    if [[ $meta == *"approval policy"* ]]; then fail "the run does not report approval policy never"; fi
     if [[ $meta == *"model=unknown "* ]]; then
       warn "log has no 'model:' line; model drift cannot be detected"
     elif [[ $meta == *"model drift"* ]]; then

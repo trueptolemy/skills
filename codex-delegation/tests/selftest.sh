@@ -49,8 +49,8 @@ while [[ $# -gt 0 ]]; do
     -c) value=${2#*=}; value=${value//\"/}
         case $2 in
           sandbox_mode=*) sandbox=$value ;;
+          approval_policy=*) approval=${FAKE_APPROVAL:-$value} ;;
           model_reasoning_effort=*) effort=$value ;;
-          approval_policy=*) approval=$value ;;
         esac
         shift 2 ;;
     -o) report=$2; shift 2 ;;
@@ -130,7 +130,7 @@ grep -q "WARN  codex 0.0.0 is not in the verified list" "$tmp/doctor.out" || fai
 grep -q "PASS  codex exec resume supports --config" "$tmp/doctor.out" || fail "doctor resume probe"
 grep -q "PASS  gates file" "$tmp/doctor.out" || fail "doctor project checks"
 grep -q "WARN  focused gates file .* is missing" "$tmp/doctor.out" || fail "doctor focused-gates warning"
-grep -qF 'PASS  every round passes: -c sandbox_mode=\"workspace-write\" -m fake-model -c model_reasoning_effort=\"high\"' "$tmp/doctor.out" || fail "doctor round arguments"
+grep -qF 'PASS  every round passes: -c sandbox_mode=\"workspace-write\" -c approval_policy=\"never\" -m fake-model -c model_reasoning_effort=\"high\"' "$tmp/doctor.out" || fail "doctor round arguments"
 ok "doctor probes CLI flags, flags an unverified version and placeholders, and fails on a missing common.md"
 
 { cat "$CDL_CONF"; echo "CODEX_EXTRA_ARGS='-p fast'"; } > "$tmp/profile.conf"
@@ -149,7 +149,7 @@ expect_fail "$scripts/new-task.sh" T1 feat/t1
 ok "new-task creates worktree, branch and task files and refuses a duplicate"
 task T1 implement "feature.txt, src/*"
 
-"$scripts/run-codex.sh" start T1 --dry-run | grep -qE 'codex exec -C [^ ]+ -c sandbox_mode=\\"workspace-write\\" -m fake-model -c model_reasoning_effort=\\"high\\" -o ' || fail "dry run"
+"$scripts/run-codex.sh" start T1 --dry-run | grep -qE 'codex exec -C [^ ]+ -c sandbox_mode=\\"workspace-write\\" -c approval_policy=\\"never\\" -m fake-model -c model_reasoning_effort=\\"high\\" -o ' || fail "dry run"
 [[ ! -e $tasks/T1/prompt.md ]] || fail "dry run wrote files"
 "$scripts/run-codex.sh" start T1 > "$tmp/start.out"
 grep -q "REPORT STATUS=DONE lines=2" "$tmp/start.out" || fail "report check"
@@ -187,7 +187,7 @@ rm "$tmp/repo-wt/T1/src/skipper.py"
 ok "suppressions fail acceptance; test-skip markers are flagged for review"
 
 printf 'Round finding.\n' > "$tmp/feedback.md"
-"$scripts/run-codex.sh" resume T1 "$tmp/feedback.md" --dry-run | grep -q 'codex exec resume -c sandbox_mode=\\"workspace-write\\" -m fake-model -c model_reasoning_effort=\\"high\\" -o ' || fail "resume dry run: same arguments as start"
+"$scripts/run-codex.sh" resume T1 "$tmp/feedback.md" --dry-run | grep -q 'codex exec resume -c sandbox_mode=\\"workspace-write\\" -c approval_policy=\\"never\\" -m fake-model -c model_reasoning_effort=\\"high\\" -o ' || fail "resume dry run: same arguments as start"
 "$scripts/run-codex.sh" resume T1 "$tmp/feedback.md" > /dev/null
 [[ -f $tasks/T1/report-r2.md && $(wc -l < "$tmp/repo-wt/T1/feature.txt") -eq 2 ]] || fail "resume round"
 [[ -z $(git -C "$tmp/repo-wt/T1" diff --cached --name-only) ]] || fail "resume should unstage"
@@ -337,8 +337,28 @@ summary O1 r1 | grep -q "^UNCHANGED" && ! summary O1 r1 | grep -q "^harness" || 
 "$scripts/new-task.sh" T5 feat/t5 > /dev/null
 cp "$tmp/t5.md" "$tasks/T5/task.md"
 expect_fail "$scripts/run-codex.sh" start T5 --dry-run
-grep -q "allowed only in operate mode" "$tmp/last.out" || fail "full access outside operate must refuse"
-ok "operate needs an explicit sandbox, may use full access, runs no gates and commits nothing; other modes refuse full access"
+grep -q "needs Mode: operate or ALLOW_FULL_ACCESS=yes" "$tmp/last.out" || fail "full access outside operate must refuse without the opt-in"
+ok "operate needs an explicit sandbox, may use full access, runs no gates and commits nothing; other modes need ALLOW_FULL_ACCESS"
+
+# --- full access -------------------------------------------------------------------
+{ cat "$CDL_CONF"; echo "CODEX_SANDBOX=danger-full-access"; } > "$tmp/full-noack.conf"
+expect_fail env CDL_CONF="$tmp/full-noack.conf" "$scripts/run-codex.sh" start T5 --dry-run
+grep -q "CODEX_SANDBOX=danger-full-access needs ALLOW_FULL_ACCESS=yes" "$tmp/last.out" || fail "full access needs the opt-in"
+{ cat "$tmp/full-noack.conf"; echo "ALLOW_FULL_ACCESS=yes"; } > "$tmp/full.conf"
+CDL_CONF=$tmp/full.conf "$scripts/run-codex.sh" start T5 --dry-run | grep -qF 'sandbox_mode=\"danger-full-access\" -c approval_policy=\"never\"' || fail "task full access with the opt-in"
+CDL_CONF=$tmp/full.conf "$scripts/new-task.sh" F1 full/f1 > /dev/null
+task F1 implement
+CDL_CONF=$tmp/full.conf "$scripts/run-codex.sh" start F1 --dry-run | grep -q 'DRY-RUN: env -u SSH_AUTH_SOCK GIT_SSH_COMMAND=' || fail "ssh shield in the command"
+SSH_AUTH_SOCK=/fake/agent FAKE_DURING="echo \"\${SSH_AUTH_SOCK-none}|\$(git ls-remote ssh://example.invalid/x 2>&1 | head -n 1)\" > '$tmp/f1.env'" \
+  CDL_CONF=$tmp/full.conf "$scripts/run-codex.sh" start F1 > "$tmp/f1.out" || fail "full-access round: $(cat "$tmp/f1.out")"
+grep -q "sandbox=danger-full-access" "$tmp/f1.out" && grep -q "GUARD PASS" "$tmp/f1.out" && ! grep -q WARNING "$tmp/f1.out" || fail "full-access round output: $(cat "$tmp/f1.out")"
+grep -q '^none|codex-delegation: ssh is disabled outside operate tasks' "$tmp/f1.env" || fail "ssh shield: $(cat "$tmp/f1.env")"
+FAKE_APPROVAL=on-request CDL_CONF=$tmp/full.conf "$scripts/run-codex.sh" continue F1 > "$tmp/f1b.out"
+grep -q "requested approval policy never but the run reports on-request" "$tmp/f1b.out" || fail "approval warning"
+"$scripts/new-task.sh" O2 op/o2 > /dev/null
+{ echo "# O2: stage"; echo; echo "Mode: operate"; echo "Sandbox: danger-full-access"; } > "$tasks/O2/task.md"
+"$scripts/run-codex.sh" start O2 --dry-run | grep -q 'DRY-RUN: env codex exec' || fail "operate tasks keep ssh"
+ok "full access needs ALLOW_FULL_ACCESS=yes; rounds run with approval never, without an ssh agent and with git over ssh refused, except operate"
 
 # --- refactor and docs modes ----------------------------------------------------
 "$scripts/new-task.sh" R1 ref/r1 > /dev/null
