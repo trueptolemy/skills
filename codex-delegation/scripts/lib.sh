@@ -79,9 +79,11 @@ task_paths() {
 #            operate requires it; danger-full-access needs operate mode or
 #            ALLOW_FULL_ACCESS=yes)
 #   Quiet: yes                                     (no test runs; see quiet.md)
+#   Max rounds: N                                  (optional; overrides MAX_ROUNDS)
 task_header() {
   local file=$TD/task.md value
   TASK_MODE=implement; TASK_ALLOWED=""; TASK_SANDBOX=""; TASK_QUIET=no
+  TASK_MAX_ROUNDS=$MAX_ROUNDS; TASK_MAX_FROM=MAX_ROUNDS
   [[ -f $file ]] || return 0
   value=$(head -n 30 "$file" | sed -n 's/^Mode:[[:space:]]*//p' | head -n 1 | xargs || true)
   [[ -z $value ]] || TASK_MODE=$value
@@ -92,6 +94,12 @@ task_header() {
     ""|no) ;;
     yes) TASK_QUIET=yes ;;
     *) die "task.md Quiet '$value' must be yes or no" ;;
+  esac
+  value=$(head -n 30 "$file" | sed -n 's/^Max rounds:[[:space:]]*//p' | head -n 1 | xargs || true)
+  case $value in
+    "") ;;
+    0|*[!0-9]*) die "task.md Max rounds '$value' must be a positive integer" ;;
+    *) TASK_MAX_ROUNDS=$value; TASK_MAX_FROM="Max rounds in task.md" ;;
   esac
   value=$(head -n 30 "$file" | sed -n 's/^Sandbox:[[:space:]]*//p' | head -n 1 | xargs || true)
   case $value in
@@ -413,6 +421,11 @@ guard_failures() {
     sed -n "s/^GUARD FAIL /r$n /p" "$f"
   done
 }
+
+# Rounds voided by ledger.sh void: they failed because of the environment
+# (an API error, a full disk, a provider outage) and do not count toward the
+# round breaker. void.log holds `rN<TAB>time<TAB>reason` per voided round.
+voided_rounds() { if [[ -f $TD/void.log ]]; then cut -f1 "$TD/void.log" | sort -u | wc -l | tr -d ' '; else echo 0; fi; }
 
 # The next unused round number for a task, counting report.md as round 1.
 next_round() {

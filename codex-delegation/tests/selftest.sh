@@ -210,7 +210,7 @@ FAKE_BAD_REPORT=1 "$scripts/run-codex.sh" resume T1 "$tmp/feedback.md" > "$tmp/b
 grep -q "no STATUS line" "$tmp/bad.out" && grep -q "90 lines exceed 80" "$tmp/bad.out" || fail "report drift warnings"
 grep -q "REPORT HINT: .*run-codex.sh continue T1" "$tmp/bad.out" || fail "truncated-report recovery hint"
 expect_fail "$scripts/run-codex.sh" resume T1 "$tmp/feedback.md"
-grep -q "BREAKER: T1 already used 3 of MAX_ROUNDS=3" "$tmp/last.out" || fail "round breaker"
+grep -q "BREAKER: T1 already used 3 of 3 rounds (MAX_ROUNDS; 0 voided" "$tmp/last.out" || fail "round breaker"
 ok "resume continues the session, warns on report drift and stops at MAX_ROUNDS"
 
 "$scripts/run-gates.sh" T1 r6 > /dev/null
@@ -224,6 +224,24 @@ ok "finish-task checks the message, commits, fast-forwards and removes the workt
 expect_fail "$scripts/new-task.sh" T1 feat/t1-again
 grep -q "already holds an earlier task" "$tmp/last.out" || fail "reused task directory must refuse"
 ok "new-task refuses a task directory that holds an earlier task"
+
+# --- voided rounds and a per-task limit -------------------------------------------
+"$scripts/new-task.sh" V1 feat/v1 > /dev/null
+{ echo "# V1: limit"; echo; echo "Mode: implement"; echo "Max rounds: 1"; } > "$tasks/V1/task.md"
+"$scripts/run-codex.sh" start V1 > /dev/null
+expect_fail "$scripts/run-codex.sh" continue V1
+grep -q "BREAKER: V1 already used 1 of 1 rounds (Max rounds in task.md; 0 voided" "$tmp/last.out" || fail "per-task limit: $(cat "$tmp/last.out")"
+expect_fail "$scripts/ledger.sh" void V1 r2 "no such round"
+expect_fail "$scripts/ledger.sh" void V1 r1 ""
+"$scripts/ledger.sh" void V1 r1 "provider HTTP 500 before any work" | grep -q "VOID V1 r1 recorded" || fail "void"
+expect_fail "$scripts/ledger.sh" void V1 r1 "again"
+"$scripts/run-codex.sh" continue V1 > /dev/null || fail "a voided round must not count"
+expect_fail "$scripts/run-codex.sh" continue V1
+grep -q "1 of 1 rounds (Max rounds in task.md; 1 voided" "$tmp/last.out" || fail "void count in breaker: $(cat "$tmp/last.out")"
+sed -i.bak 's/^Max rounds: 1$/Max rounds: 0/' "$tasks/V1/task.md" && rm "$tasks/V1/task.md.bak"
+expect_fail "$scripts/run-codex.sh" continue V1 --dry-run
+grep -q "Max rounds '0' must be a positive integer" "$tmp/last.out" || fail "Max rounds validation"
+ok "Max rounds in task.md overrides MAX_ROUNDS; ledger void records an environment failure that then does not count"
 
 # --- feedback naming and continue ------------------------------------------------
 "$scripts/new-task.sh" T2 feat/t2 > /dev/null
@@ -423,7 +441,8 @@ for i in 1 2 3; do "$scripts/ledger.sh" full-read T1 "log $i" > /dev/null; done
 expect_fail "$scripts/ledger.sh" full-read T1 "log 4"
 grep -q "BREAKER: full read 4 would exceed MAX_FULL_READS=3" "$tmp/last.out" || fail "full-read breaker"
 "$scripts/ledger.sh" status > "$tmp/status.out"
-grep -qE '^T1 +implement +3 +3702' "$tmp/status.out" || fail "ledger rounds and tokens: $(cat "$tmp/status.out")"
+grep -qE '^T1 +implement +3 +0 +3702' "$tmp/status.out" || fail "ledger rounds and tokens: $(cat "$tmp/status.out")"
+grep -qE '^V1 +implement +2 +1 ' "$tmp/status.out" || fail "ledger void count: $(cat "$tmp/status.out")"
 rounds=$(cat "$tasks"/*/rounds.log | grep -c "^round [0-9]* CODEX .*tokens=1234$")
 grep -q "TOTAL tokens=$((rounds * 1234)) full-reads=3/3" "$tmp/status.out" || fail "ledger totals: $(cat "$tmp/status.out")"
 ok "ledger enforces MAX_FULL_READS and sums rounds and tokens per task"

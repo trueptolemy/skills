@@ -14,7 +14,10 @@ Allowed paths: src/<area>/*, tests/<area>/*, docs/<owning-document>.md
      Sandbox: optional read-only | workspace-write | danger-full-access override;
        danger-full-access needs Mode: operate or ALLOW_FULL_ACCESS=yes.
      Quiet: yes when a measurement runs on the same host; Codex then runs no
-       tests or builds and the pipeline runs no gates for that round. -->
+       tests or builds and the pipeline runs no gates for that round.
+     Max rounds: optional per-task round limit instead of MAX_ROUNDS, set when
+       the user approves the plan; rounds voided with ledger.sh void do not
+       count. -->
 
 The common rules are appended below this task and bind it. This branch starts
 from <base commit or previous task branch>. <What earlier tasks added that this

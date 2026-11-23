@@ -4,6 +4,9 @@
 #   ledger.sh full-read <task-id> <what>        record a full log/diff read BEFORE doing it
 #   ledger.sh guard-ack <task-id> r<N> <what>   record that a GUARD FAIL of round N was
 #                                               the planner's own change
+#   ledger.sh void <task-id> r<N> <reason>      void round N: it failed because of the
+#                                               environment and does not count toward
+#                                               the round breaker
 #   ledger.sh status                             rounds, tokens, report, guard and gate state
 #
 # full-read exits 3 once the count would exceed MAX_FULL_READS: do not perform
@@ -11,6 +14,10 @@
 # results, `--stat`, named hunks) are not full reads and are not recorded.
 # guard-ack is only for a change you made yourself while the round ran (for
 # example a branch created by hand); a change Codex made is a forbidden action.
+# void is only for a round the environment broke (an API error, a full disk or
+# exhausted inodes, a provider outage), never for a round whose work was
+# wrong. Each void is kept with its reason in <task>/void.log and counted in
+# status; list them in the final summary.
 
 source "$(dirname "$0")/lib.sh"
 cdl_load
@@ -38,8 +45,17 @@ case ${1:-} in
     echo "$(date -u +%FT%TZ) $what" > "$TD/guard-$round.ack"
     echo "GUARD $TID $round recorded as a planner change: $what"
     ;;
+  void)
+    tid=${2:-}; round=${3:-}; why=${4:-}
+    [[ -n $tid && $round =~ ^r[0-9]+$ && -n $why ]] || die "usage: ledger.sh void <task-id> r<N> <environment failure>"
+    task_paths "$tid"
+    grep -qE "^round ${round#r} (start|resume) " "$TD/rounds.log" 2>/dev/null || die "$TID has no round ${round#r}"
+    if [[ -f $TD/void.log ]] && cut -f1 "$TD/void.log" | grep -qx "$round"; then die "$TID $round is already void"; fi
+    printf '%s\t%s\t%s\n' "$round" "$(date -u +%FT%TZ)" "$why" >> "$TD/void.log"
+    echo "VOID $TID $round recorded ($(voided_rounds) voided in total): $why"
+    ;;
   status)
-    printf '%-14s %-12s %6s %12s  %-10s %-5s %s\n' TASK MODE ROUNDS TOKENS REPORT GUARD GATES
+    printf '%-14s %-12s %6s %4s %12s  %-10s %-5s %s\n' TASK MODE ROUNDS VOID TOKENS REPORT GUARD GATES
     total=0
     for dir in "$TASKS_ROOT"/*/; do
       [[ -f $dir/rounds.log ]] || continue
@@ -58,10 +74,10 @@ case ${1:-} in
       compgen -G "$TD/guard-r*.ack" > /dev/null && guard=ack
       [[ -z $(guard_failures) ]] || guard=FAIL
       total=$((total + tokens))
-      printf '%-14s %-12s %6s %12s  %-10s %-5s %s\n' "$tid" "${mode:-?}" "$rounds" "$tokens" "${status:-?}" "$guard" "$gates"
+      printf '%-14s %-12s %6s %4s %12s  %-10s %-5s %s\n' "$tid" "${mode:-?}" "$rounds" "$(voided_rounds)" "$tokens" "${status:-?}" "$guard" "$gates"
     done
     used=$( [[ -f $reads ]] && wc -l < "$reads" || echo 0)
     echo "TOTAL tokens=$total full-reads=$used/$MAX_FULL_READS"
     ;;
-  *) die "usage: ledger.sh full-read <task-id> <what> | guard-ack <task-id> r<N> <what> | status" ;;
+  *) die "usage: ledger.sh full-read <task-id> <what> | guard-ack <task-id> r<N> <what> | void <task-id> r<N> <reason> | status" ;;
 esac

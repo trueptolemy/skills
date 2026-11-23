@@ -42,13 +42,15 @@ checked independently. Choose the lightest flow that keeps acceptance honest:
 ## Task modes
 
 The first lines of `task.md` declare the mode, optional scope globs, an
-optional sandbox override and an optional quiet flag; the scripts read them:
+optional sandbox override, an optional quiet flag and an optional round
+limit; the scripts read them:
 
 ```text
 Mode: implement | refactor | docs | investigate | operate
 Allowed paths: src/area/*, tests/area/*, docs/area.md
 Sandbox: read-only | workspace-write | danger-full-access
 Quiet: yes
+Max rounds: 5
 ```
 
 | Mode | Sandbox | Codex instructions and report | Mechanical acceptance (`run-gates.sh`) | Planner acceptance |
@@ -341,7 +343,9 @@ Codex retrying while its log stops growing. Check the round's log tail
    (`readlink /proc/<pid>/cwd`). In an operate stage, first check that no
    operation Codex started is still running.
 2. Run `codex app-server daemon restart`.
-3. Restart Codex in the same session, in the background:
+3. Void the round the error broke, so it does not count toward the round
+   breaker: `scripts/ledger.sh void <id> r<N> "<the error>"`.
+4. Restart Codex in the same session, in the background:
    `scripts/pipeline.sh continue <id>` (or `run-codex.sh continue <id>`). It
    sends a standard "finish and write the report" message, so no feedback file
    is needed and the session keeps its findings.
@@ -392,8 +396,16 @@ real-system operation through Codex with `Mode: operate` and an explicit
   pass (rewritten expectations, suppressions) or a gate regression the
   planner cannot explain: **stop all work**.
 - `MAX_ROUNDS` (default 3) Codex rounds for one task without acceptance: stop
-  that task without committing. `run-codex.sh resume` refuses a further round
-  with exit code 3.
+  that task without committing. `run-codex.sh resume` and `continue` refuse a
+  further round with exit code 3. A task whose size the user approved with
+  the plan may set its own limit with `Max rounds:` in task.md. Do not raise
+  a limit while a task runs.
+- A round that failed because of the environment, not its work (an API
+  error, a full disk or exhausted inodes, a provider outage), does not count
+  once you record it with `scripts/ledger.sh void <id> r<N> "<reason>"`. The
+  reason is kept in `<id>/void.log` and `ledger.sh status` counts the voids.
+  Never void a round whose code or report was wrong, and list every void in
+  the final summary.
 - More than `MAX_FULL_READS` (default 3) full log or full diff reads for
   diagnosis: stop all work. Record each one first with
   `scripts/ledger.sh full-read <id> <what>`, which refuses with exit code 3 once
@@ -421,8 +433,9 @@ real-system operation through Codex with `Mode: operate` and an explicit
 
 ## Final summary
 
-Per task: Codex rounds, your own gate failures, planner decisions, failures
-Codex reported, and the cumulative count of full reads for diagnosis. Add your
+Per task: Codex rounds, voided rounds with their reasons, your own gate
+failures, planner decisions, failures Codex reported, and the cumulative count
+of full reads for diagnosis. Add your
 own mistakes (for example harness errors), an assessment of Codex quality (rule
 compliance, investigation depth, test design, test-integrity problems caught
 only in review, over-engineering or overly conservative constants), every

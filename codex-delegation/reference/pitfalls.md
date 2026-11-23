@@ -45,6 +45,15 @@ branches and combined integration gates.
   the report" message into the same session. Without an API error, run
   `continue` directly. The procedure is in "API errors" in SKILL.md.
 
+**Environment failures use up the round limit.**
+- Trap: API errors and an exhausted `/tmp` ended rounds whose work was not at
+  fault, and each of them counted toward `MAX_ROUNDS`. The limit was then
+  raised by hand to continue, which left no record of why.
+- Fix: void such a round with `ledger.sh void <id> r<N> "<reason>"`; it stops
+  counting toward the breaker, and its reason stays in `void.log`. A task the
+  user approved as larger sets `Max rounds:` in its task.md instead of a
+  global change.
+
 **A background job reads a worktree whose branch changed.**
 - Trap: a verification job ran from a worktree in which the planner then
   checked out another branch and cherry-picked commits. The job could load

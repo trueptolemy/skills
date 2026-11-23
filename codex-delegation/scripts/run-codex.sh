@@ -19,9 +19,10 @@
 # header says `Quiet: yes` (a measurement on the same host forbids test runs).
 # start  writes report.md and codex.log.
 # resume continues the recorded session with a feedback file and writes
-#        report-rN.md and codex-rN.log. It refuses beyond MAX_ROUNDS (the
-#        per-task circuit breaker). The index is unstaged first because the
-#        gate runner stages it.
+#        report-rN.md and codex-rN.log. It refuses once the task has used
+#        MAX_ROUNDS rounds, or the `Max rounds:` of its task.md (the per-task
+#        circuit breaker); rounds voided with ledger.sh void do not count. The
+#        index is unstaged first because the gate runner stages it.
 # continue resumes with a standard "finish the work and write the report"
 #        message. Use it when a round stopped early: its report has no STATUS
 #        line, or it is a progress note. If the log tail shows an API error,
@@ -142,8 +143,10 @@ else
 fi
 sid=$(grep -m1 -oiE 'session id: [0-9a-f-]{8,}' "$TD/codex.log" | awk '{print $3}' || true)
 [[ -n $sid ]] || die "no 'session id:' line in $TD/codex.log"
-if (( n > MAX_ROUNDS )); then
-  echo "BREAKER: $TID already used $((n - 1)) of MAX_ROUNDS=$MAX_ROUNDS rounds." >&2
+voided=$(voided_rounds)
+used=$((n - 1 - voided))
+if (( used >= TASK_MAX_ROUNDS )); then
+  echo "BREAKER: $TID already used $used of $TASK_MAX_ROUNDS rounds ($TASK_MAX_FROM; $voided voided as environment failures)." >&2
   echo "Stop this task without committing, keep its worktree and report its state." >&2
   exit 3
 fi
