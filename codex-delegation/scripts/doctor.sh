@@ -64,6 +64,11 @@ project_checks() {
   else
     echo "FAIL  gates file $GATES_FILE is missing or has no gate lines"
   fi
+  if [[ -f $FOCUSED_GATES_FILE ]] && grep -qE '^[^#[:space:]][^|]*\|' "$FOCUSED_GATES_FILE"; then
+    echo "PASS  focused gates file $FOCUSED_GATES_FILE has gate lines"
+  else
+    echo "WARN  focused gates file $FOCUSED_GATES_FILE is missing; --focused rounds will refuse (see templates/focused.example)"
+  fi
   if [[ -s $TASKS_ROOT/common.md ]]; then
     echo "PASS  common rules $TASKS_ROOT/common.md"
     if grep -qE '\[(AGENTS|Real-system|private paths|Interpreter)' "$TASKS_ROOT/common.md"; then

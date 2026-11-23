@@ -21,8 +21,10 @@ and not a way to pass, and exactly which test, case and assertions may change,
 with the property the replacement must still prove. Everything else stays
 forbidden.>
 
-No other file may change. Then rerun the focused tests and every gate, and send
-the report in the same format, noting this round's change under SUMMARY and
-quoting the exact before/after of any authorized test change.
+No other file may change. Then rerun the focused tests and static checks for
+the changed files (the planner runs the full gate), and send the report in the
+same format, noting this round's change under SUMMARY and quoting the exact
+before/after of any authorized test change.
+<Name this file descriptively, for example feedback-coverage.md.>
 <If this is the last allowed round: "This is the final review round for this
 task.">

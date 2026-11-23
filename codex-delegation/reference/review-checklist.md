@@ -13,7 +13,11 @@ Count every full log or full diff read made for diagnosis.
 - [ ] The report is at most 80 lines, and its gate results come only from
       commands Codex ran in this session.
 - [ ] My independent `gates-rN/summary.txt` ends with `DONE`, and the line
-      before it is `RESULT PASS`.
+      before it is `RESULT PASS`. Its `GATESET` line names the full list
+      before any delivery; a focused list suffices only for intermediate
+      rounds and trial versions.
+- [ ] A report with no STATUS line is a stopped round: check the log tail for
+      a provider error and use `run-codex.sh continue`, not a new feedback.
 - [ ] The first gate (harness or import-path check) passed, so the run tested
       this worktree.
 - [ ] `SUPPRESSIONS added=0`, and generated output (build artifacts) matches
@@ -33,6 +37,9 @@ Count every full log or full diff read made for diagnosis.
       error text).
 - [ ] docs: no `NONDOC` lines; spot-check at least three CLAIMS VERIFIED
       entries against the cited file:line.
+- [ ] operate: `UNCHANGED` in the summary; the report records code identity,
+      every command with its exit code and bound, and host state before and
+      after; score the results yourself against preregistered criteria.
 - [ ] investigate: `UNCHANGED` in the summary; spot-check at least three
       VERIFIED findings with targeted reads or grep. A wrong VERIFIED finding
       fails the round; an INFERRED one must not be used as fact downstream.
@@ -65,7 +72,8 @@ Count every full log or full diff read made for diagnosis.
 - [ ] Text sent to a model or outside (errors, prompts, logs): bounded in
       length, with no input values, secrets or process state.
 - [ ] Prompt or evaluation assets: grep for the development case's
-      identifiers and numbers; no leak and no bias toward one answer.
+      identifiers and numbers; no leak and no bias toward one answer. Grep
+      task.md and feedback for them too, before launching.
 - [ ] Module line counts, complexity and contract file sizes are not
       approaching project limits.
 
@@ -80,8 +88,11 @@ Count every full log or full diff read made for diagnosis.
 
 ## 6. Decision
 
-- [ ] Pass: write the commit message with fresh evidence only, then run
+- [ ] Pass: write the commit message with fresh evidence only (rewrite
+      Codex's "not run" evidence with your gate results), then run
       `finish-task.sh`.
+- [ ] Stacked or rewritten history: one combined full gate on the stacked
+      result, and `git diff <gated> HEAD` empty after any rewrite.
 - [ ] Fail: write `feedback.md` with a concrete Required change per finding,
       run `run-codex.sh resume`, and increment the round count.
 - [ ] Update the ledger: rounds, my gate failures, planner decisions, full

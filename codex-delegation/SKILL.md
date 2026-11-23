@@ -5,8 +5,10 @@ description: Plan, delegate and independently accept multi-task code changes exe
 
 # Codex delegation: Claude plans and accepts, Codex executes
 
-This workflow comes from a real delegation of seven implementation tasks and
-thirteen Codex rounds. Scripts are in `scripts/`, templates in `templates/`,
+This workflow comes from real delegations: first seven implementation tasks
+and thirteen Codex rounds, then a longer program of about thirty tasks,
+including real-system stages, trial branches and combined integration gates.
+Scripts are in `scripts/`, templates in `templates/`,
 detailed traps in [reference/pitfalls.md](reference/pitfalls.md) and the
 per-round acceptance checklist in
 [reference/review-checklist.md](reference/review-checklist.md).
@@ -15,8 +17,8 @@ per-round acceptance checklist in
 
 | Role | Owns | Does not do |
 |---|---|---|
-| Claude (this session) | Plan, task.md, launching Codex, reading reports, independent acceptance, feedback, commit and fast-forward, ledger | Write product code; investigate after planning; read Codex's full log or full diff (except a counted diagnosis) |
-| Codex | Implementation and all post-planning investigation (the task's Unknowns) | Commit, push, call models, touch real systems |
+| Claude (this session) | Plan, task.md, launching Codex, reading reports, independent acceptance, feedback, commit and fast-forward, ledger; trivial merge-conflict resolution in documents or imports, followed by tests | Write product code; investigate after planning; read Codex's full log or full diff (except a counted diagnosis) |
+| Codex | Implementation and all post-planning investigation (the task's Unknowns); operate stages the user authorized | Commit, push, call models, touch real systems outside an authorized operate stage |
 | User | Approve the plan and ADRs, test-change exceptions, paid sessions, real-system work and pushes | — |
 
 Authorization covers only what the user named. "Execute follow-up decisions"
@@ -26,7 +28,7 @@ summary.
 
 ## When to delegate, and how much ceremony
 
-Delegation costs a task file, a Codex round (often 30 to 90 minutes), an
+Delegation costs a task file, a Codex round (often 30 to 180 minutes), an
 independent gate run and a review. Do the work directly when it is a few lines,
 needs tight interactive iteration with the user, or its acceptance cannot be
 checked independently. Choose the lightest flow that keeps acceptance honest:
@@ -39,13 +41,14 @@ checked independently. Choose the lightest flow that keeps acceptance honest:
 
 ## Task modes
 
-The first lines of `task.md` declare the mode, optional scope globs and an
-optional sandbox override; the scripts read them:
+The first lines of `task.md` declare the mode, optional scope globs, an
+optional sandbox override and an optional quiet flag; the scripts read them:
 
 ```text
-Mode: implement | refactor | docs | investigate
+Mode: implement | refactor | docs | investigate | operate
 Allowed paths: src/area/*, tests/area/*, docs/area.md
-Sandbox: read-only | workspace-write
+Sandbox: read-only | workspace-write | danger-full-access (operate only)
+Quiet: yes
 ```
 
 | Mode | Sandbox | Codex instructions and report | Mechanical acceptance (`run-gates.sh`) | Planner acceptance |
@@ -54,12 +57,38 @@ Sandbox: read-only | workspace-write
 | refactor | `CODEX_SANDBOX` | `refactor.md`: behavior evidence, pinning tests | no existing `TEST_PATHS` file modified or deleted; scope, gates | look for behavior change the tests cannot see |
 | docs | `CODEX_SANDBOX` | `docs.md`: every claim cited | only `DOC_PATHS` files changed; gates | spot-check cited claims against the code |
 | investigate | read-only | `investigate.md`: VERIFIED/INFERRED findings | worktree unchanged; no gates | spot-check VERIFIED findings; one wrong one fails the round |
+| operate | explicit `Sandbox:` line required | `operate.md`: narrow stop rules, no signals, generous bounds | worktree unchanged; no gates | score results yourself; check host state and code identity |
 
 `Allowed paths` makes "only the owning modules changed" a mechanical check; a
-staged file outside the globs fails acceptance. Use an investigate task for
+staged file outside the globs fails acceptance. A list narrower than the
+change needs costs a whole BLOCKED round: cover the owning modules and their
+adjacent selection, entry and policy modules, and name the files of parallel
+sibling tasks that must not change. Use an investigate task for
 post-planning questions whose answer decides later tasks; it costs no gate run
 and cannot change the tree. Override a mode's instructions per project in
 `<tasks>/modes/<mode>.md`.
+
+`Quiet: yes` marks a task that runs while a timing-sensitive measurement or
+operate stage uses the same host. `run-codex.sh` appends `templates/quiet.md`
+(no tests, builds or benchmarks) and `pipeline.sh` runs no gates. Code written
+this way usually fails its first focused check, so budget one more round.
+
+## Gates: focused checks per round, one full gate per delivery
+
+A full gate list can take hours. Run it once per delivery, not per round:
+
+- Codex runs only focused tests and fast static checks for the files it
+  changed (`common.md`).
+- `pipeline.sh start|resume|continue <id>` runs Codex and then, when the
+  report says DONE, the full gate list (`run-gates.sh <id> r<N>`) and the
+  mechanical diff checks. With `--focused` it runs `FOCUSED_GATES_FILE`
+  instead: use that for intermediate rounds and trial versions. Every gate
+  sees `CHANGED_FILES` (paths changed against the merge base).
+- Several focus-tested branches that are delivered together get one combined
+  full gate on their stacked result. A failure there is usually an
+  integration defect, so fix it in a dedicated integration task instead of
+  reopening the original ones.
+- The full gate before any delivery to the base branch cannot be skipped.
 
 ## Token economy: the exchange protocol
 
@@ -81,8 +110,12 @@ Rules:
   several in parallel. The main context keeps conclusions, not file dumps.
   After planning, investigation belongs to Codex.
 - Do not poll; every check costs a turn. Wait for completion notifications.
-  Typical durations seen: a Codex round 30 to 90 minutes, a large full gate
-  suite about 25 minutes. Record your project's numbers in the ledger.
+  Durations vary by project: Codex rounds took 30 to 180 minutes, and one full
+  gate suite took 25 minutes in one project and about 110 in another. Record
+  your project's numbers in the ledger.
+- When you filter a script's output, keep its `error:` and `BREAKER` lines
+  (for example `grep -E 'REPORT|CODEX|WARN|HINT|BREAKER|error'`): a filtered
+  refusal looks like a silent failure.
 - Diagnosis ladder: summary, then the FAIL lines in the summary, then a `grep`
   for a specific pattern in one gate log, and only then a full read. A full
   read is viewing a whole Codex log, a whole gate log or an unfiltered whole
@@ -94,9 +127,12 @@ Rules:
   neither side rediscovers them.
 - Keep `common.md` stable across tasks. Forbid web search there; it is
   instruction-level only, so also check your Codex configuration.
-- If `report_check` warns (missing STATUS, over-long report), ask for a
-  conforming report in the next feedback instead of reading a malformed one in
-  full.
+- If `report_check` warns of an over-long report, ask for a conforming report
+  in the next feedback instead of reading a malformed one in full. A report
+  with no STATUS line that reads like a progress note means the round stopped
+  early. Check the log tail for a provider or transport error; if there is
+  one, restart the Codex service (for example `codex app-server daemon
+  restart`), then run `run-codex.sh continue <id>`.
 - Track cost per task: `run-codex.sh` records each round's model, applied
   sandbox and `tokens used` in `rounds.log`; `scripts/ledger.sh status` sums
   them with rounds, report status and gate result. Optional cost lever:
@@ -110,7 +146,9 @@ Rules:
    `export CDL_CONF=...`. Copy `templates/gates.example` to `gates.txt` and list
    every required gate from the project's development process, starting with a
    harness check (for example that the imported package path lies inside
-   `$WT`); the preset file lists suggested gates for its ecosystem.
+   `$WT`); the preset file lists suggested gates for its ecosystem. Copy
+   `templates/focused.example` to `focused.txt` and adapt it: the tests for
+   `CHANGED_FILES` and their consumers, plus fast static checks.
 2. Run `scripts/doctor.sh`. It checks git, the Codex CLI version against the
    verified list and the exec/resume flags the scripts use, and the project
    configuration, without calling a model. An unverified Codex version means
@@ -163,19 +201,23 @@ start Codex only after they confirm it.
 ## Phase 3: one task loop
 
 1. `scripts/new-task.sh <id> <branch> [--from <ref>]`. It refuses on low disk
-   space, runs the setup hook and checks that the worktree is clean.
+   space, refuses a task directory that already holds an earlier task, runs
+   the setup hook and checks that the worktree is clean. Pick an unused id.
 2. Write `<tasks>/<id>/task.md` from `templates/task.md`, starting with its
    Mode and Allowed paths header. Append names,
    constants and limits from earlier reports under "Notes from earlier tasks",
    list the questions Codex must investigate as Unknowns, and spell out every
    authorized exception.
 3. Start Codex with Bash `run_in_background`:
-   `scripts/run-codex.sh start <id>`. Wait for the completion notification.
+   `scripts/pipeline.sh start <id>` (Codex, then gates and diff checks), or
+   `scripts/run-codex.sh start <id>` for Codex alone. Wait for the completion
+   notification.
 4. Read the `REPORT STATUS=... lines=...` and `CODEX ... sandbox=... tokens=...`
    lines printed by `run-codex.sh` (a sandbox warning means the run did not get
    the requested isolation), then `report.md` (at most 80 lines).
 5. Accept, following [review-checklist.md](reference/review-checklist.md):
-   - run `scripts/run-gates.sh <id> r<N>` in the background and read only
+   - read the gate summary `pipeline.sh` printed, or run
+     `scripts/run-gates.sh <id> r<N>` in the background and read only
      `gates-r<N>/summary.txt`: the last line `DONE` means finished, the line
      before it `RESULT PASS` means passed;
    - inspect `git diff --cached --stat` and do targeted review of risky hunks.
@@ -184,17 +226,20 @@ start Codex only after they confirm it.
    - add the evidence Codex cannot produce: run new producers on real data,
      pure-replay real historical archives, recompute golden fixtures with the
      pre-change code.
-6. If it fails, write `feedback.md` from `templates/feedback.md` (one concrete
-   Required change per finding, the files that may change, rerun every gate,
-   same report format) and run `scripts/run-codex.sh resume <id> feedback.md`
-   in the background. The script unstages the tree, finds the session id and
-   numbers the round.
+6. If it fails, write a feedback file from `templates/feedback.md` (one
+   concrete Required change per finding, the files that may change, the
+   focused checks to rerun, same report format) and run
+   `scripts/pipeline.sh resume <id> <feedback>` in the background. The script
+   unstages the tree, finds the session id and numbers the round.
 7. If it passes, write the commit message from `templates/commit-msg.txt` with
-   only fresh evidence and the unexercised parts, then
+   only fresh evidence and the unexercised parts. Codex's draft often says
+   "tests not run" and may use another subject convention; rewrite its
+   evidence with your own fresh gate results. Then run
    `scripts/finish-task.sh <id> msg.txt`. It requires a PASS summary, runs the
    message checks, commits and delivers per `DELIVERY`, then removes the clean
-   worktree. An investigate task commits nothing: `finish-task.sh <id>` checks
-   the tree is unchanged and its report is the deliverable.
+   worktree. An investigate or operate task commits nothing:
+   `finish-task.sh <id>` checks the tree is unchanged and its report is the
+   deliverable.
 8. Update your copy of `templates/ledger.md`; `scripts/ledger.sh status` gives
    the rounds, tokens and gate state to copy.
 
@@ -211,6 +256,46 @@ start Codex only after they confirm it.
   - No: require an implementation fix, not a test change.
 - Never authorize rewriting expectations, adding suppressions or moving
   existing tests off the production path in order to pass.
+- Rounds are saved by authorizing the predictable cases in task.md up front
+  (see the optional clause in `templates/task.md`): assertions of a default the
+  task changes, of the literal text of a message it changes, or of a refusal
+  it removes may change only to the new value. In one program four BLOCKED
+  rounds were exactly these cases.
+
+## Operate stages (real systems, only with the user's authorization)
+
+An operate task runs a hardware measurement, a deployment or another long
+real-system operation through Codex with `Mode: operate` and an explicit
+`Sandbox:` line. Each lesson below cost a whole stage once:
+
+- Before the stage, dry-check offline everything it will be refused for:
+  admission of the exact parameters with the code under test, the presence of
+  the configuration it names, and free disk space.
+- List the differences from the last successful run, such as a worktree path
+  instead of the main checkout or a new parameter value. Resolve each one
+  before launching.
+- Stop rules are narrow: a non-zero exit of a command the stage started, or a
+  host-state difference. A refusal or error inside a running operation is
+  that operation's own business. Codex never signals a running command.
+- Bounds exist only against hangs. Set them in hours or days, never from the
+  duration of an earlier run.
+- Nothing else that loads the host runs during the stage: use `Quiet: yes` for
+  parallel Codex tasks and do not run gates.
+- Score the results yourself. Keep any known answers out of task.md,
+  feedback and every prompt that the system under evaluation can see.
+
+## Trial branches and history
+
+- Iterations that must not reach the base branch (for example trial versions
+  of a prompt or a tuning parameter) live on a trial branch as commits.
+  Intermediate versions get focused checks only. Squash the final version into
+  one commit for delivery, then run the full gate on the result.
+- After rewriting history, prove that the new head is tree-identical to the
+  commit that passed the gate (`git diff <gated> HEAD` is empty) before you
+  deliver it.
+- Never switch branches or rewrite history in a worktree that a running
+  background job uses: the job can load files from an intermediate state.
+  Use a separate worktree.
 
 ## Circuit breakers (defaults; the user may override)
 
@@ -238,6 +323,9 @@ start Codex only after they confirm it.
   checkout, and nine of them once filled the disk.
 - Make gates import the worktree's code (`GATE_ENV`) and link untracked
   dependencies with `SETUP_HOOK`.
+- Delete scratch directories that Codex's real-data checks leave under `/tmp`
+  once the round is accepted, and stale test temporary directories only while
+  no gate runs.
 
 ## Final summary
 

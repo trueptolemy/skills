@@ -1,7 +1,9 @@
 # Traps observed in practice (trap / root cause / fix)
 
-Every entry happened, or was caught in acceptance, during a real Codex
-delegation of seven implementation tasks and thirteen Codex rounds.
+Every entry happened, or was caught in acceptance, during real Codex
+delegations: first seven implementation tasks and thirteen Codex rounds, then
+a program of about thirty tasks that included real-system stages, trial
+branches and combined integration gates.
 
 ## Waiting and background work
 
@@ -22,6 +24,31 @@ delegation of seven implementation tasks and thirteen Codex rounds.
   2. whether the log grows between two samples;
   3. the worktree's change count;
   4. whether the report file exists.
+
+**A filtered failure looks silent.**
+- Trap: a background launcher filtered the script output to
+  `REPORT|CODEX|WARN`, and two refusals (a reused task directory, a feedback
+  copy error) came back as a bare `rc=1` or an old report.
+- Root cause: the scripts print refusals as `error: ...` on stderr, and the
+  filter removed them.
+- Fix: keep `error:`, `BREAKER` and `HINT` lines in every filter
+  (`pipeline.sh` does).
+
+**A round stops before its report.**
+- Trap: twice a round ended with a one-line progress note as its "report"
+  (`REPORT STATUS=UNKNOWN`), and once a provider HTTP 500 ended the first
+  request of a long run.
+- Fix: check the log tail for a provider or transport error. If there is one,
+  restart the Codex service (for example `codex app-server daemon restart`),
+  then run `run-codex.sh continue <id>`, which sends a standard "finish and
+  write the report" message into the same session.
+
+**A background job reads a worktree whose branch changed.**
+- Trap: a verification job ran from a worktree in which the planner then
+  checked out another branch and cherry-picked commits. The job could load
+  modules from an intermediate tree, so its result was void.
+- Fix: never switch branches or rewrite history in a worktree that a running
+  job uses; create a separate worktree for history work.
 
 ## Token economy
 
@@ -96,12 +123,79 @@ delegation of seven implementation tasks and thirteen Codex rounds.
   Unstage with `git reset -q` before resuming Codex; `run-codex.sh resume` does
   this.
 
+**An old task id is reused.**
+- Trap: a task id from an earlier program still had its directory, with
+  `rounds.log` and `report.md`. `new-task.sh` reused it, and `run-codex.sh start`
+  refused because `report.md` existed. The filtered output showed only the
+  old report, which looked like the new result, and the planner overwrote the
+  old `task.md`.
+- Fix: `new-task.sh` now refuses such a directory unless `--reuse-task` is
+  given. Check `ls <tasks>/<id>` before choosing an id.
+
+**A feedback file named like its archive copy.**
+- Trap: `run-codex.sh resume` copies the feedback to `feedback-rN.md`; a file
+  already named that way was copied onto itself and the round never started.
+- Fix: the script now skips a same-path copy. Prefer descriptive feedback
+  names (`feedback-coverage.md`) anyway.
+
+**Every round paid for the full suite twice.**
+- Trap: Codex ran every gate before reporting and the planner ran them again;
+  with a two-hour suite each round cost four hours of gates, and trial versions
+  paid the same.
+- Fix: Codex runs focused checks only; `pipeline.sh` runs the full list once
+  per delivery and `--focused` for intermediate rounds (see SKILL.md, Gates).
+
+**Tests run while a measurement uses the same host.**
+- Fix: mark parallel tasks `Quiet: yes`. Codex then writes code without running
+  anything heavy, and the planner runs the focused checks after the
+  measurement. Expect that round's code to fail its first check.
+
+**Branches that passed alone fail together.**
+- Trap: two features that each passed their focused tests broke six tests
+  once stacked: a retention check classified the other feature's legitimately
+  imported files as missing.
+- Fix: run one combined full gate on the stacked branches and repair failures
+  in a dedicated integration task.
+
 **Reverting a file after a gate run does nothing.**
 - Root cause: the gate runner staged the tree, and `git checkout -- <file>`
   restores the staged copy, not the committed one.
 - Fix: restore from the commit with `git checkout HEAD -- <file>` (or
   `git restore --source=HEAD --staged --worktree <file>`). `run-codex.sh resume`
   unstages first, so Codex sees its changes against HEAD.
+
+## Operate stages (real systems)
+
+**A stop rule killed a live operation.**
+- Trap: the stage said "stop if a runtime check refuses". Six and a half hours
+  into a model-driven investigation, a calculation tool refused one call, and
+  the model had already corrected the call. Codex interrupted the run.
+- Fix: stop only on a non-zero exit of a command the stage started, or on a
+  host-state difference; never signal a running command (`operate.md`).
+
+**A bound sized from an earlier run.**
+- Trap: a seven-hour bound, chosen because an earlier run took seven hours,
+  ended a longer run in its fourth experiment.
+- Fix: bounds protect against hangs only. Use hours or days.
+
+**The runtime environment differed from the last good run.**
+- Trap: the first run from a worktree failed at once, because the guest
+  executed a helper from the host asset path, and that path pointed into the
+  worktree.
+- Fix: before launching, list the differences from the last successful run
+  and resolve each one; here, point the asset root at the main checkout after
+  checking that the assets are identical.
+
+**Refusals that a dry check would have caught.**
+- Trap: two stages refused at preflight: a benchmark missing from an
+  allowlist, then an odd worker count.
+- Fix: run the admission function with the exact parameters on the code under
+  test before every stage. Prefer deleting refusals that protect nothing.
+
+**Answers leak into the evaluation.**
+- Fix: keep known answers out of task.md, feedback and every prompt the
+  evaluated system can see; grep them for the case's identifiers before
+  launching.
 
 ## Codex CLI
 
@@ -160,6 +254,25 @@ delegation of seven implementation tasks and thirteen Codex rounds.
   second consumer". When a new abstraction gets its consumer only later, chain
   the branches (T2 from T1, T3 from T2) and fast-forward them together after
   the first consumer passes.
+
+**Allowed paths narrower than the change.**
+- Trap: two rounds ended BLOCKED because the change also had to touch an
+  adjacent entry or policy module outside the list.
+- Fix: cover the owning modules and their selection, entry and policy
+  neighbours; name sibling tasks' files to avoid instead.
+
+**Predictable test-change questions.**
+- Trap: four rounds ended BLOCKED to ask whether an assertion of the old
+  default, an old message or a retired refusal could change.
+- Fix: authorize exactly these cases in task.md up front (the template's
+  optional clause), always with quoted before and after.
+
+**Simplification removes little.**
+- Trap: two rounds asking to "delete defensive branches" removed 78 net lines
+  out of several thousand added.
+- Fix: require an inventory first (each branch, why normal data never reaches
+  it, its dedicated tests) and a measurable target. Accept diminishing returns
+  instead of spending further rounds. Large reductions need a design change.
 
 **Overly conservative constants.**
 - Trap: under a byte bound, Codex reduced an overview to a single row, which

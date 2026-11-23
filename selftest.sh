@@ -114,6 +114,7 @@ grep -q "WARN  common.md still contains template placeholders" "$tmp/doctor.out"
 grep -q "WARN  codex 0.0.0 is not in the verified list" "$tmp/doctor.out" || fail "doctor version warning"
 grep -q "PASS  codex exec resume supports --config" "$tmp/doctor.out" || fail "doctor resume probe"
 grep -q "PASS  gates file" "$tmp/doctor.out" || fail "doctor project checks"
+grep -q "WARN  focused gates file .* is missing" "$tmp/doctor.out" || fail "doctor focused-gates warning"
 ok "doctor probes CLI flags, flags an unverified version and placeholders, and fails on a missing common.md"
 
 # --- implement mode, rounds, breakers ------------------------------------------

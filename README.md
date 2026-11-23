@@ -8,9 +8,10 @@ circuit breakers and fast-forwards accepted work without pushing. It is also a
 token-economy protocol: both sides exchange only bounded artifacts (task file,
 80-line report, gate summary, targeted diffs).
 
-It was distilled from a real delegation of seven implementation tasks and
-thirteen Codex rounds; the traps met along the way are in
-`codex-delegation/reference/pitfalls.md`.
+It was distilled from real delegations, first seven implementation tasks and
+thirteen Codex rounds, then a program of about thirty tasks with real-system
+stages, trial branches and combined integration gates. The traps met along
+the way are in `codex-delegation/reference/pitfalls.md`.
 
 ## Layout
 
@@ -22,17 +23,22 @@ codex-delegation/
   scripts/
     doctor.sh              check git, Codex CLI version and flags, and the project setup (no model call)
     new-task.sh            worktree, branch and task directory (disk check, setup hook, clean check)
-    run-codex.sh           start or resume Codex in the background; mode sandbox, round breaker,
-                           report shape, applied sandbox and token count
-    run-gates.sh           mode checks, scope, gates, suppressions, skip markers; summary ends with DONE
+    run-codex.sh           start, resume or continue Codex in the background; mode sandbox,
+                           round breaker, report shape, applied sandbox and token count
+    run-gates.sh           mode checks, scope, full or focused gates with CHANGED_FILES,
+                           suppressions, skip markers; summary ends with DONE
+    pipeline.sh            one background round: Codex, then gates and diff checks
     finish-task.sh         require PASS, check the message, commit, deliver, remove the worktree
     ledger.sh              full-read breaker and per-task rounds, tokens and gate state
     lib.sh                 shared configuration and helpers
   templates/
     codex-delegation.conf  per-project configuration
     presets/               python, go, rust, java, javascript, cpp pattern defaults and gate hints
-    modes/                 Codex instructions and report formats for implement, refactor, docs, investigate
-    gates.example          gate list examples
+    modes/                 Codex instructions and report formats for implement, refactor, docs,
+                           investigate and operate (authorized real-system stages)
+    gates.example          full gate list examples
+    focused.example        focused gate list example (changed files and their consumers)
+    quiet.md               appended for `Quiet: yes` tasks: no test or build runs
     setup-worktree.example.sh  symlink hook for untracked dependencies
     common.md              rules sent to Codex with every task (adapt once per project)
     task.md                task template: contract, unknowns, properties, exceptions
@@ -95,11 +101,16 @@ $S/run-gates.sh baseline r0      # read /path/repo-tasks/baseline/gates-r0/summa
 
 ## Task modes and delivery
 
-The first lines of each `task.md` declare `Mode:` (implement, refactor, docs or
-investigate) and optionally `Allowed paths:` globs. Investigate tasks run in a
-read-only sandbox and deliver their report; refactor tasks may not edit
-existing tests; docs tasks may change only documentation; any staged file
-outside `Allowed paths` fails acceptance. `DELIVERY` in the configuration
+The first lines of each `task.md` declare `Mode:` (implement, refactor, docs,
+investigate or operate) and optionally `Allowed paths:` globs, `Sandbox:` and
+`Quiet: yes`.
+- Investigate tasks run in a read-only sandbox and deliver their report.
+- Operate tasks run an authorized real-system stage with an explicit sandbox,
+  change no repository file and deliver their report.
+- Refactor tasks may not edit existing tests.
+- Docs tasks may change only documentation.
+- Any staged file outside `Allowed paths` fails acceptance.
+- Quiet tasks run no tests while a measurement uses the host. `DELIVERY` in the configuration
 selects ff-merge, branch-only (for pull requests; pushing still needs
 authorization) or patch.
 
@@ -108,9 +119,10 @@ authorization) or patch.
 ```bash
 $S/new-task.sh T1 codex/t1-foo                 # chained task: --from codex/t0-bar
 # edit /path/repo-tasks/T1/task.md
-$S/run-codex.sh start T1                       # background; read only T1/report.md
-$S/run-gates.sh T1 r1                          # background; read only T1/gates-r1/summary.txt
-$S/run-codex.sh resume T1 feedback.md          # on failure: resume with feedback
+$S/pipeline.sh start T1                        # background: Codex, then the full gates and diff checks
+$S/pipeline.sh resume T1 feedback-x.md --focused   # intermediate round: focused gates only
+$S/run-codex.sh continue T1                    # a round stopped before its report
+$S/run-gates.sh T1 r3                          # full gates alone; read only T1/gates-r3/summary.txt
 $S/finish-task.sh T1 commit-msg.txt            # on success: commit, deliver, remove worktree
 $S/ledger.sh status                            # rounds, tokens, report and gate state per task
 ```
@@ -122,7 +134,8 @@ breakers are in `codex-delegation/SKILL.md`.
 
 - Codex runs in the `workspace-write` sandbox: writes only in the worktree, no
   network for its commands, and no write access to the shared `.git`, so it
-  cannot commit. The main session commits.
+  cannot commit. The main session commits. Only an operate task, with an
+  explicit `Sandbox:` line the user authorized, may run with full access.
 - The scripts never push, never use sudo, and call no model except the
   configured Codex in `run-codex.sh`.
 - `finish-task.sh` commits only when the newest gate summary says
