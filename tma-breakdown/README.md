@@ -23,6 +23,13 @@ scores, the exact commands, the delivered report and its JSON results.
 Reading `example/tma-breakdown-520.omnetpp_r.md` is the quickest way to see
 what the skill produces.
 
+**The method itself** is described in
+[reference/breakdown_topdown_metric.pdf](reference/breakdown_topdown_metric.pdf),
+the method document *Break Down Performance Gap into Topdown Metric* (revised
+version). Read it for the derivation and the original 520.omnetpp_r
+experiment. [reference/method.md](reference/method.md) is the condensed form
+the agent uses.
+
 ## Layout
 
 ```
@@ -31,6 +38,7 @@ README.md                     this file
 scripts/
   tma_breakdown.py            inspect | report  (Python 3 standard library only)
 reference/
+  breakdown_topdown_metric.pdf  the method document (derivation and the 520.omnetpp_r experiment)
   method.md                   score model, breakdown identity, sub-node weights, noise band, window decomposition
   applicability.md            every check, its thresholds and what to do when it fails
   interpretation.md           evidence patterns (EPT walks, exit-induced front-end pollution, window mismatch, ...)
