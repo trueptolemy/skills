@@ -1,9 +1,10 @@
 
 # Mode: implement
 
-Change production code and tests to meet the task contract. Add tests that
-prove each acceptance property, including its failure path. Keep legacy
-behavior identical unless the contract says otherwise.
+Change production code and tests to meet the task contract, as directly as
+"How to write the code" above asks. Add tests that prove each acceptance
+property, including its failure path. Keep legacy behavior identical unless
+the contract says otherwise.
 
 Report, in this order:
 

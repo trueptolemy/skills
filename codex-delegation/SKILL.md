@@ -285,6 +285,12 @@ start Codex only after they confirm it.
    - inspect `git diff --cached --stat` and do targeted review of risky hunks.
      The gate runner stages the tree, so use `--cached`, and only after the
      summary shows its STAGED line; a plain diff during staging looks empty;
+   - review for over-defensive code (checklist section 4): checks of values
+     that are already guaranteed, branches for impossible states, catch-all
+     handlers, silent fallbacks and options nobody asked for. Every gate
+     passes them, so send each back as a finding that names what to delete
+     and why it is unnecessary. Accepting the simpler implementation is the
+     default;
    - add the evidence Codex cannot produce: run new producers on real data,
      pure-replay real historical archives, recompute golden fixtures with the
      pre-change code.
@@ -454,5 +460,6 @@ failures, planner decisions, failures Codex reported, and the cumulative count
 of full reads for diagnosis. Add your
 own mistakes (for example harness errors), an assessment of Codex quality (rule
 compliance, investigation depth, test design, test-integrity problems caught
-only in review, over-engineering or overly conservative constants), every
+only in review, over-defensive code and over-engineering, overly conservative
+constants), every
 unexercised item, and the next steps that need separate authorization.

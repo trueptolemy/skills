@@ -54,6 +54,23 @@ shared git files and other checkouts, and any change there fails the task.
 - Changing defaults, historical versions or replay of existing data unless
   the task says so explicitly.
 
+## How to write the code
+
+Implement directly: write the simplest code that meets the contract, and reuse
+what the repository already has. The planner reviews for over-defensive code
+and sends it back.
+
+- Validate untrusted input once, where it enters (user input, files, network,
+  external tools). Inside the program, trust the callers, the types and the
+  checks that already ran; do not check them again.
+- No branches for states that cannot occur, no catch-all exception handlers,
+  and no silent fallbacks or defaults that turn an error into plausible
+  output. A state that should be impossible fails loudly.
+- No options, parameters, wrappers or abstraction layers the task does not
+  ask for.
+- A branch that no test can reach without faking an impossible state is
+  dead code: delete it instead of writing such a test.
+
 ## Environment
 
 - [Interpreter and how to make it import this worktree, for example

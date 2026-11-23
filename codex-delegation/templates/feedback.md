@@ -9,7 +9,9 @@ planner's clean run.
 
 Required change:
 
-- <Concrete change.>
+- <Concrete change. For over-defensive code, name each check, branch or
+  fallback to delete and the guarantee that makes it unnecessary; "remove
+  defensive code" alone removes little.>
 - <What must stay unchanged.>
 - If <a legitimate obstacle>, do not work around it; report it under OPEN
   QUESTIONS with your diagnosis.

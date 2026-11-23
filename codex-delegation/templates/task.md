@@ -48,6 +48,8 @@ Acceptance evidence:
 
 - <Constraints that are decisions, not research: reuse X instead of a second
   implementation; bound Y and disclose the remainder; refuse Z loudly.>
+- <Where input is validated, once (for example "the CLI parser validates the
+  options; the library trusts them"), so nothing is checked at every layer.>
 
 ## Acceptance properties
 

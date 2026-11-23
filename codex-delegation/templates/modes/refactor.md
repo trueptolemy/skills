@@ -3,8 +3,10 @@
 
 Restructure code without changing observable behavior. Existing tests are the
 specification: do not modify or delete any existing test file. You may add
-tests that pin behavior before restructuring it. Acceptance fails on any change
-to an existing test file and on any behavior change the gates detect.
+tests that pin behavior before restructuring it. Do not add checks, fallbacks
+or options while restructuring: they change behavior too. Acceptance fails on
+any change to an existing test file and on any behavior change the gates
+detect.
 
 Report, in this order:
 

@@ -63,7 +63,26 @@ Count every full log or full diff read made for diagnosis.
       fixtures, monkeypatched internals or conditional defaults that move
       existing tests off the production path.
 
-## 4. Targeted review of risky changes
+## 4. Simplicity: over-defensive code
+
+Every gate passes over-defensive code, and coverage gates even reward it, so
+look for it in each diff. Each hit is a finding with a concrete Required
+change (delete it, and name the guarantee that makes it unnecessary), not a
+style note.
+
+- [ ] Checks of values that the callers, the types or an earlier validation
+      already guarantee; the same validation repeated at several layers
+      instead of once where the input enters.
+- [ ] Branches for states that cannot occur, and tests that fake such a state
+      (monkeypatching internals, impossible inputs) only to cover them.
+- [ ] Catch-all handlers (`except Exception`, `catch (...)`), silent
+      fallbacks and defaults that turn an error into plausible output.
+- [ ] Options, parameters, wrappers and abstractions the task did not ask
+      for; single-caller helpers that only rename.
+- [ ] The size of the diff fits the change: a small behavior change that adds
+      hundreds of lines usually carries defensive code.
+
+## 5. Targeted review of risky changes
 
 - [ ] Lines removed from legacy-path modules:
       `git diff --cached -U2 -- <module> | grep '^-'`; confirm legacy behavior
@@ -83,7 +102,7 @@ Count every full log or full diff read made for diagnosis.
 - [ ] Module line counts, complexity and contract file sizes are not
       approaching project limits.
 
-## 5. Evidence beyond the gates (the planner supplies what Codex cannot)
+## 6. Evidence beyond the gates (the planner supplies what Codex cannot)
 
 - [ ] Run new producers or views on real data and compare with an
       independent analysis.
@@ -92,7 +111,7 @@ Count every full log or full diff read made for diagnosis.
 - [ ] Record what remains unexercised in the commit message and the final
       summary.
 
-## 6. Decision
+## 7. Decision
 
 - [ ] Pass: write the commit message with fresh evidence only (rewrite
       Codex's "not run" evidence with your gate results), then run

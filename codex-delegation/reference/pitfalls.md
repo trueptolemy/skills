@@ -326,12 +326,24 @@ branches and combined integration gates.
 - Fix: authorize exactly these cases in task.md up front (the template's
   optional clause), always with quoted before and after.
 
+**Defensive code passes every gate.**
+- Trap: Codex checks values that its callers already validated, catches broad
+  exceptions and adds fallbacks and options nobody asked for. Every gate
+  passes, and a coverage gate even pushes it to write tests that fake
+  impossible states to reach those branches. Two later rounds were then spent
+  removing such branches (next entry).
+- Fix: `common.md` asks for direct implementations that validate input once,
+  where it enters; task.md names that boundary; acceptance reviews every diff
+  for over-defensive code (review-checklist section 4) and sends each case
+  back with what to delete and why.
+
 **Simplification removes little.**
 - Trap: two rounds asking to "delete defensive branches" removed 78 net lines
   out of several thousand added.
 - Fix: require an inventory first (each branch, why normal data never reaches
   it, its dedicated tests) and a measurable target. Accept diminishing returns
-  instead of spending further rounds. Large reductions need a design change.
+  instead of spending further rounds. Large reductions need a design change;
+  asking for direct code from the first round (previous entry) is cheaper.
 
 **Overly conservative constants.**
 - Trap: under a byte bound, Codex reduced an overview to a single row, which
