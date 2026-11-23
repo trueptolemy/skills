@@ -8,6 +8,7 @@ test runner.
 | skill | what it does | details |
 |---|---|---|
 | [codex-delegation](codex-delegation/) | Claude plans and accepts; the OpenAI Codex CLI implements in isolated git worktrees, with independent gates, round-numbered feedback and circuit breakers | [codex-delegation/README.md](codex-delegation/README.md) |
+| [tma-breakdown](tma-breakdown/) | Breaks a virtual-machine-vs-bare-metal (or any two-configuration) throughput score gap into Intel TMA / top-down nodes from EMON summaries. Checks whether the method applies first, then cross-validates the large gaps with other EMON metrics and writes a Markdown report | [tma-breakdown/README.md](tma-breakdown/README.md) |
 
 ## Layout
 
@@ -16,6 +17,7 @@ README.md            this index
 install.sh           install one or all skills into Claude Code (user or project level)
 selftest.sh          run every <skill>/tests/selftest.sh, then test install.sh
 codex-delegation/    SKILL.md, README.md, scripts/, templates/, reference/, tests/
+tma-breakdown/       SKILL.md, README.md, scripts/, reference/, tests/
 ```
 
 ## Install
@@ -24,7 +26,7 @@ codex-delegation/    SKILL.md, README.md, scripts/, templates/, reference/, test
 git clone <this-repo> ~/skill && cd ~/skill
 ./selftest.sh                              # optional: offline tests of every skill and the installer
 ./install.sh                               # every skill, user level: ~/.claude/skills/<skill>
-./install.sh --skill codex-delegation      # one skill
+./install.sh --skill tma-breakdown         # one skill
 ./install.sh --project /path/repo          # project level: /path/repo/.claude/skills/<skill>
 ./install.sh --link                        # symlink to this checkout while editing a skill
 ./install.sh --force                       # replace installed copies

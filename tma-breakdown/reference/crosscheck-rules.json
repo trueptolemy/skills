@@ -1,0 +1,214 @@
+{
+  "version": 1,
+  "comment": "TMA node -> independent EMON evidence. kind: metric (regex on the row name), event (raw row), event_per_instr (/INST_RETIRED.ANY), event_per_cycle (/CPU_CLK_UNHALTED.THREAD), event_ratio (num/den). worse: higher | lower | info. A positive TMA gap expects the evidence to be worse in the VM case. Event names follow Intel SPR/EMR/GNR EMON; add rows for other platforms.",
+  "rules": [
+    {"nodes": ["Frontend_Bound", "Fetch_Latency"],
+     "evidence": [
+       {"label": "cycles with 0 uops delivered (per cycle)", "kind": "event_per_cycle", "event": "IDQ_UOPS_NOT_DELIVERED.CYCLES_0_UOPS_DELIV.CORE", "worse": "higher", "why": "front end starves the back end"},
+       {"label": "ICACHE_DATA.STALLS per cycle", "kind": "event_per_cycle", "event": "ICACHE_DATA.STALLS", "worse": "higher"},
+       {"label": "BACLEARS.ANY per instr", "kind": "event_per_instr", "event": "BACLEARS.ANY", "worse": "higher"},
+       {"label": "ITLB walks per instr", "kind": "event_per_instr", "event": "ITLB_MISSES.WALK_COMPLETED", "worse": "higher"}
+     ]},
+    {"nodes": ["ICache_Misses", "Code_L2_Hit", "Code_L2_Miss"],
+     "evidence": [
+       {"label": "L1-I code read misses per instr", "kind": "metric", "metric": "^metric_L1-I code read misses", "worse": "higher", "why": "more instruction-cache misses"},
+       {"label": "ICACHE_DATA.STALLS per cycle", "kind": "event_per_cycle", "event": "ICACHE_DATA.STALLS", "worse": "higher"},
+       {"label": "ICACHE_TAG.MISS per instr", "kind": "event_per_instr", "event": "ICACHE_TAG.MISS", "worse": "higher"},
+       {"label": "L2 code read misses per instr", "kind": "event_per_instr", "event": "L2_RQSTS.CODE_RD_MISS", "worse": "higher"},
+       {"label": "L2 demand code MPI", "kind": "metric", "metric": "^metric_L2 demand code MPI$", "worse": "higher"},
+       {"label": "LLC code hits per instr", "kind": "metric", "metric": "^metric_LLC code references hit in LLC per instr", "worse": "higher", "why": "code fetched from L3: the working set or a polluter (e.g. host code after VM exits) evicts L1I/L2"},
+       {"label": "LLC code read MPI", "kind": "metric", "metric": "^metric_LLC code read MPI", "worse": "higher", "why": "code fetched from memory"},
+       {"label": "retired instrs after an L1I miss, per instr", "kind": "event_per_instr", "event": "FRONTEND_RETIRED.L1I_MISS", "worse": "higher"}
+     ]},
+    {"nodes": ["ITLB_Misses", "Code_STLB_Hit", "Code_STLB_Miss"],
+     "evidence": [
+       {"label": "ITLB (2nd level) MPI", "kind": "metric", "metric": "^metric_ITLB \\(2nd level\\) MPI$", "worse": "higher", "one_sided": true},
+       {"label": "ITLB walks per instr", "kind": "event_per_instr", "event": "ITLB_MISSES.WALK_COMPLETED", "worse": "higher"},
+       {"label": "ITLB STLB hits per instr", "kind": "event_per_instr", "event": "ITLB_MISSES.STLB_HIT", "worse": "higher"},
+       {"label": "cycles per ITLB walk", "kind": "event_ratio", "num": "ITLB_MISSES.WALK_ACTIVE", "den": "ITLB_MISSES.WALK_COMPLETED", "worse": "higher", "one_sided": true, "why": "longer walks, e.g. two-dimensional (EPT) walks"},
+       {"label": "ITLB miss latency (core clks)", "kind": "metric", "metric": "^metric_ITLB miss latency", "worse": "higher", "one_sided": true},
+       {"label": "retired instrs after an ITLB miss, per instr", "kind": "event_per_instr", "event": "FRONTEND_RETIRED.ITLB_MISS", "worse": "higher", "why": "ITLB misses that delayed retired (workload) instructions"},
+       {"label": "retired instrs after an STLB miss (code), per instr", "kind": "event_per_instr", "event": "FRONTEND_RETIRED.STLB_MISS", "worse": "higher"}
+     ]},
+    {"nodes": ["Code_STLB_Miss_4K"],
+     "evidence": [
+       {"label": "ITLB 4K walks per instr", "kind": "event_per_instr", "event": "ITLB_MISSES.WALK_COMPLETED_4K", "worse": "higher"}
+     ]},
+    {"nodes": ["Code_STLB_Miss_2M"],
+     "evidence": [
+       {"label": "ITLB 2M/4M walks per instr", "kind": "event_per_instr", "event": "ITLB_MISSES.WALK_COMPLETED_2M_4M", "worse": "higher"},
+       {"label": "ITLB (2nd level) large page MPI", "kind": "metric", "metric": "^metric_ITLB \\(2nd level\\) large page MPI$", "worse": "higher"}
+     ]},
+    {"nodes": ["Branch_Resteers", "Unknown_Branches"],
+     "evidence": [
+       {"label": "BACLEARS.ANY per instr", "kind": "event_per_instr", "event": "BACLEARS.ANY", "worse": "higher", "why": "branches unknown to the BTB (cold or flushed predictor)"},
+       {"label": "unknown-branch cycles per cycle", "kind": "event_per_cycle", "event": "INT_MISC.UNKNOWN_BRANCH_CYCLES", "worse": "higher"}
+     ]},
+    {"nodes": ["Mispredicts_Resteers", "Branch_Mispredicts", "Bad_Speculation"],
+     "evidence": [
+       {"label": "branch mispredict ratio", "kind": "metric", "metric": "^metric_branch mispredict ratio$", "worse": "higher"},
+       {"label": "mispredicted branches per instr", "kind": "event_per_instr", "event": "BR_MISP_RETIRED.ALL_BRANCHES", "worse": "higher"}
+     ]},
+    {"nodes": ["Cond_NT_Mispredicts"],
+     "evidence": [{"label": "cond. not-taken mispredicts per instr", "kind": "event_per_instr", "event": "BR_MISP_RETIRED.COND_NTAKEN", "worse": "higher"}]},
+    {"nodes": ["Cond_TK_Mispredicts"],
+     "evidence": [{"label": "cond. taken mispredicts per instr", "kind": "event_per_instr", "event": "BR_MISP_RETIRED.COND_TAKEN", "worse": "higher"}]},
+    {"nodes": ["Ind_Call_Mispredicts"],
+     "evidence": [{"label": "indirect call mispredicts per instr", "kind": "event_per_instr", "event": "BR_MISP_RETIRED.INDIRECT_CALL", "worse": "higher", "why": "indirect predictor flushed (e.g. IBPB) or polluted"},
+                  {"label": "supervisor share of indirect call mispredicts", "kind": "event_ratio", "num": "BR_MISP_RETIRED.INDIRECT_CALL:SUP", "den": "BR_MISP_RETIRED.INDIRECT_CALL", "worse": "info", "why": "kernel/hypervisor code vs workload"}]},
+    {"nodes": ["Ind_Jump_Mispredicts"],
+     "evidence": [{"label": "indirect mispredicts per instr", "kind": "event_per_instr", "event": "BR_MISP_RETIRED.INDIRECT", "worse": "higher"}]},
+    {"nodes": ["Ret_Mispredicts"],
+     "evidence": [{"label": "return mispredicts per instr", "kind": "event_per_instr", "event": "BR_MISP_RETIRED.RET", "worse": "higher", "why": "return stack overwritten (e.g. RSB stuffing on VM exit)"},
+                  {"label": "supervisor share of return mispredicts", "kind": "event_ratio", "num": "BR_MISP_RETIRED.RET:SUP", "den": "BR_MISP_RETIRED.RET", "worse": "info", "why": "kernel/hypervisor code vs workload"}]},
+    {"nodes": ["Clears_Resteers", "Machine_Clears", "Other_Nukes"],
+     "evidence": [
+       {"label": "machine clears per instr", "kind": "event_per_instr", "event": "MACHINE_CLEARS.COUNT", "worse": "higher"},
+       {"label": "memory-ordering clears per instr", "kind": "event_per_instr", "event": "MACHINE_CLEARS.MEMORY_ORDERING", "worse": "higher"},
+       {"label": "clear resteer cycles per cycle", "kind": "event_per_cycle", "event": "INT_MISC.CLEAR_RESTEER_CYCLES", "worse": "higher"}
+     ]},
+    {"nodes": ["MS_Switches", "MS", "Microcode_Sequencer", "Heavy_Operations", "Assists"],
+     "evidence": [
+       {"label": "MS switches per instr", "kind": "event_per_instr", "event": "IDQ.MS_SWITCHES", "worse": "higher"},
+       {"label": "MS uops per instr", "kind": "event_per_instr", "event": "IDQ.MS_UOPS", "worse": "higher", "why": "microcoded flows (e.g. VM transitions, serializing or privileged instructions)"},
+       {"label": "assists per instr", "kind": "event_per_instr", "event": "ASSISTS.ANY", "worse": "higher"}
+     ]},
+    {"nodes": ["Page_Faults"],
+     "evidence": [{"label": "page-fault assists per instr", "kind": "event_per_instr", "event": "ASSISTS.PAGE_FAULT", "worse": "higher"}]},
+    {"nodes": ["LCP"],
+     "evidence": [{"label": "LCP stall cycles per cycle", "kind": "event_per_cycle", "event": "DECODE.LCP", "worse": "higher"}]},
+    {"nodes": ["DSB_Switches"],
+     "evidence": [{"label": "DSB-to-MITE switch penalty per cycle", "kind": "event_per_cycle", "event": "DSB2MITE_SWITCHES.PENALTY_CYCLES", "worse": "higher"}]},
+    {"nodes": ["MITE", "Decoder0_Alone"],
+     "evidence": [{"label": "% uops from legacy decode (MITE)", "kind": "metric", "metric": "^metric_% Uops delivered from legacy decode pipeline", "worse": "higher"}]},
+    {"nodes": ["DSB"],
+     "evidence": [{"label": "% uops from DSB", "kind": "metric", "metric": "^metric_% Uops delivered from decoded Icache", "worse": "info"}]},
+    {"nodes": ["Backend_Bound", "Memory_Bound"],
+     "evidence": [
+       {"label": "memory stall cycles per cycle", "kind": "event_per_cycle", "event": "CYCLE_ACTIVITY.STALLS_MEM_ANY", "worse": "higher"},
+       {"label": "L3-miss stall cycles per cycle", "kind": "event_per_cycle", "event": "MEMORY_ACTIVITY.STALLS_L3_MISS", "worse": "higher"},
+       {"label": "cycles with an active DTLB load walk", "kind": "event_per_cycle", "event": "DTLB_LOAD_MISSES.WALK_ACTIVE", "worse": "higher"}
+     ]},
+    {"nodes": ["L1_Bound", "DTLB_Load", "Load_STLB_Miss", "Load_STLB_Miss_4K"],
+     "evidence": [
+       {"label": "DTLB (2nd level) load MPI", "kind": "metric", "metric": "^metric_DTLB \\(2nd level\\) load MPI$", "worse": "higher", "one_sided": true, "why": "more STLB misses (page walks)"},
+       {"label": "DTLB load walks per instr", "kind": "event_per_instr", "event": "DTLB_LOAD_MISSES.WALK_COMPLETED", "worse": "higher", "one_sided": true},
+       {"label": "cycles per DTLB load walk", "kind": "event_ratio", "num": "DTLB_LOAD_MISSES.WALK_ACTIVE", "den": "DTLB_LOAD_MISSES.WALK_COMPLETED", "worse": "higher", "why": "longer walks: two-dimensional (guest x EPT) page walks"},
+       {"label": "cycles with an active DTLB load walk", "kind": "event_per_cycle", "event": "DTLB_LOAD_MISSES.WALK_ACTIVE", "worse": "higher"},
+       {"label": "DTLB load miss latency (core clks)", "kind": "metric", "metric": "^metric_DTLB load miss latency", "worse": "higher"},
+       {"label": "LLC page walk MPI", "kind": "metric", "metric": "^metric_LLC page walk MPI$", "worse": "higher", "why": "page-walk memory references missing the LLC"}
+     ]},
+    {"nodes": ["Load_STLB_Miss_4K"],
+     "evidence": [
+       {"label": "DTLB load 4K walks per instr", "kind": "event_per_instr", "event": "DTLB_LOAD_MISSES.WALK_COMPLETED_4K", "worse": "higher", "one_sided": true},
+       {"label": "DTLB (2nd level) 4KB page load MPI", "kind": "metric", "metric": "^metric_DTLB \\(2nd level\\) 4KB page load MPI$", "worse": "higher", "one_sided": true}
+     ]},
+    {"nodes": ["Load_STLB_Miss_2M"],
+     "evidence": [
+       {"label": "DTLB load 2M/4M walks per instr", "kind": "event_per_instr", "event": "DTLB_LOAD_MISSES.WALK_COMPLETED_2M_4M", "worse": "higher"},
+       {"label": "DTLB (2nd level) 2MB page load MPI", "kind": "metric", "metric": "^metric_DTLB \\(2nd level\\) 2MB large page load MPI$", "worse": "higher"}
+     ]},
+    {"nodes": ["Load_STLB_Miss_1G"],
+     "evidence": [{"label": "DTLB load 1G walks per instr", "kind": "event_per_instr", "event": "DTLB_LOAD_MISSES.WALK_COMPLETED_1G", "worse": "higher"}]},
+    {"nodes": ["Load_STLB_Hit"],
+     "evidence": [
+       {"label": "DTLB load STLB hits per instr", "kind": "event_per_instr", "event": "DTLB_LOAD_MISSES.STLB_HIT", "worse": "higher"},
+       {"label": "STLB data page hits per instr", "kind": "metric", "metric": "^metric_STLB data page hits per instr$", "worse": "higher"}
+     ]},
+    {"nodes": ["Store_Fwd_Blk"],
+     "evidence": [{"label": "store-forward blocks per instr", "kind": "event_per_instr", "event": "LD_BLOCKS.STORE_FORWARD", "worse": "higher"}]},
+    {"nodes": ["Lock_Latency"],
+     "evidence": [{"label": "locked loads per instr", "kind": "event_per_instr", "event": "MEM_INST_RETIRED.LOCK_LOADS", "worse": "higher"}]},
+    {"nodes": ["Split_Loads"],
+     "evidence": [{"label": "split loads per instr", "kind": "event_per_instr", "event": "MEM_INST_RETIRED.SPLIT_LOADS", "worse": "higher"}]},
+    {"nodes": ["FB_Full"],
+     "evidence": [{"label": "fill-buffer-full cycles per cycle", "kind": "event_per_cycle", "event": "L1D_PEND_MISS.FB_FULL", "worse": "higher"}]},
+    {"nodes": ["L2_Bound", "L2_Hit_Latency"],
+     "evidence": [
+       {"label": "L1D MPI", "kind": "metric", "metric": "^metric_L1D MPI", "worse": "higher"},
+       {"label": "L2-hit loads per instr", "kind": "event_per_instr", "event": "MEM_LOAD_RETIRED.L2_HIT", "worse": "higher"}
+     ]},
+    {"nodes": ["L3_Bound", "L3_Hit_Latency", "SQ_Full"],
+     "evidence": [
+       {"label": "L2 MPI", "kind": "metric", "metric": "^metric_L2 MPI", "worse": "higher"},
+       {"label": "L2 demand data read MPI", "kind": "metric", "metric": "^metric_L2 demand data read MPI$", "worse": "higher"},
+       {"label": "L3-hit loads per instr", "kind": "event_per_instr", "event": "MEM_LOAD_RETIRED.L3_HIT", "worse": "higher"}
+     ]},
+    {"nodes": ["Contested_Accesses", "Data_Sharing"],
+     "evidence": [
+       {"label": "L3 hits with snoop forward per instr", "kind": "event_per_instr", "event": "MEM_LOAD_L3_HIT_RETIRED.XSNP_FWD", "worse": "higher"},
+       {"label": "L3 hits with snoop no-forward per instr", "kind": "event_per_instr", "event": "MEM_LOAD_L3_HIT_RETIRED.XSNP_NO_FWD", "worse": "higher"}
+     ]},
+    {"nodes": ["DRAM_Bound", "MEM_Latency", "Local_MEM"],
+     "evidence": [
+       {"label": "LLC MPI", "kind": "metric", "metric": "^metric_LLC MPI", "worse": "higher"},
+       {"label": "L3-miss loads per instr", "kind": "event_per_instr", "event": "MEM_LOAD_RETIRED.L3_MISS", "worse": "higher"},
+       {"label": "LLC demand read miss latency (ns)", "kind": "metric", "metric": "^metric_Average LLC demand data read miss latency \\(in ns\\)$", "worse": "higher"},
+       {"label": "L3-miss stall cycles per cycle", "kind": "event_per_cycle", "event": "MEMORY_ACTIVITY.STALLS_L3_MISS", "worse": "higher"}
+     ]},
+    {"nodes": ["MEM_Bandwidth", "MBA_Stalls"],
+     "evidence": [
+       {"label": "memory bandwidth total (MB/s, window-dependent)", "kind": "metric", "metric": "^metric_memory bandwidth total", "worse": "info", "why": "a per-second rate scales with r and utilization; read it only next to the window check"},
+       {"label": "TOR DRD miss avg entries", "kind": "metric", "metric": "^metric_TOR DRD miss avg entries", "worse": "info"}
+     ]},
+    {"nodes": ["Remote_MEM", "Remote_Cache"],
+     "evidence": [{"label": "% reads to remote DRAM", "kind": "metric", "metric": "^metric_NUMA %_Reads addressed to remote DRAM$", "worse": "higher"},
+                  {"label": "% reads to remote cluster cache (SNC)", "kind": "metric", "metric": "^metric_NUMA % all reads to remote cluster cache$", "worse": "higher", "why": "lines served by another sub-NUMA cluster: vCPU/memory placement differs from BM"},
+                  {"label": "% reads to remote cluster memory (SNC)", "kind": "metric", "metric": "^metric_NUMA % all reads to remote cluster memory$", "worse": "higher"}]},
+    {"nodes": ["Store_Bound", "Store_Latency"],
+     "evidence": [
+       {"label": "stores per instr", "kind": "metric", "metric": "^metric_stores per instr$", "worse": "higher"},
+       {"label": "cycles bound on stores per cycle", "kind": "event_per_cycle", "event": "EXE_ACTIVITY.BOUND_ON_STORES", "worse": "higher"}
+     ]},
+    {"nodes": ["DTLB_Store", "Store_STLB_Miss", "Store_STLB_Miss_4K"],
+     "evidence": [
+       {"label": "DTLB (2nd level) store MPI", "kind": "metric", "metric": "^metric_DTLB \\(2nd level\\) store MPI$", "worse": "higher", "one_sided": true},
+       {"label": "cycles per DTLB store walk", "kind": "event_ratio", "num": "DTLB_STORE_MISSES.WALK_ACTIVE", "den": "DTLB_STORE_MISSES.WALK_COMPLETED", "worse": "higher", "why": "longer (two-dimensional) walks"},
+       {"label": "cycles with an active DTLB store walk", "kind": "event_per_cycle", "event": "DTLB_STORE_MISSES.WALK_ACTIVE", "worse": "higher"},
+       {"label": "DTLB store miss latency (core clks)", "kind": "metric", "metric": "^metric_DTLB store miss latency", "worse": "higher"}
+     ]},
+    {"nodes": ["Store_STLB_Hit"],
+     "evidence": [{"label": "DTLB store STLB hits per instr", "kind": "event_per_instr", "event": "DTLB_STORE_MISSES.STLB_HIT", "worse": "higher"}]},
+    {"nodes": ["Core_Bound", "Ports_Utilization", "Ports_Utilized_0"],
+     "evidence": [
+       {"label": "cycles with 0 ports used per cycle", "kind": "event_per_cycle", "event": "EXE_ACTIVITY.EXE_BOUND_0_PORTS", "worse": "higher"},
+       {"label": "cycles with 1 port used per cycle", "kind": "event_per_cycle", "event": "EXE_ACTIVITY.1_PORTS_UTIL", "worse": "higher"}
+     ]},
+    {"nodes": ["Serializing_Operation", "Slow_Pause", "C01_Wait", "C02_Wait", "Memory_Fence"],
+     "evidence": [
+       {"label": "PAUSE executions per instr", "kind": "metric", "metric": "^metric_core PAUSE instr executions per instr$", "worse": "higher", "why": "spin loops (e.g. guest idle/halt polling, lock spinning)"},
+       {"label": "PAUSE cycles per cycle", "kind": "event_per_cycle", "event": "CPU_CLK_UNHALTED.PAUSE", "worse": "higher"},
+       {"label": "C0.1 cycles per cycle", "kind": "event_per_cycle", "event": "CPU_CLK_UNHALTED.C01", "worse": "higher"},
+       {"label": "C0.2 cycles per cycle", "kind": "event_per_cycle", "event": "CPU_CLK_UNHALTED.C02", "worse": "higher"},
+       {"label": "LFENCE per instr", "kind": "event_per_instr", "event": "MISC2_RETIRED.LFENCE", "worse": "higher"},
+       {"label": "scoreboard stall cycles per cycle", "kind": "event_per_cycle", "event": "RESOURCE_STALLS.SCOREBOARD", "worse": "higher"}
+     ]},
+    {"nodes": ["Divider", "FP_Divider", "INT_Divider"],
+     "evidence": [{"label": "divider active cycles per cycle", "kind": "event_per_cycle", "event": "ARITH.DIV_ACTIVE", "worse": "higher"}]},
+    {"nodes": ["Retiring", "Light_Operations", "Other_Light_Ops"],
+     "evidence": [
+       {"label": "supervisor share of instructions", "kind": "event_ratio", "num": "INST_RETIRED.ANY:SUP", "den": "INST_RETIRED.ANY", "worse": "higher", "why": "extra kernel/hypervisor instructions per unit of work retire slots that BM does not need"},
+       {"label": "far branches per instr", "kind": "event_per_instr", "event": "BR_INST_RETIRED.FAR_BRANCH", "worse": "higher", "why": "interrupts, system calls and VM transitions"},
+       {"label": "uops per instr", "kind": "metric", "metric": "^metric_TMA_Info_Thread_UopPI$", "worse": "higher"},
+       {"label": "NOPs per instr", "kind": "event_per_instr", "event": "INST_RETIRED.NOP", "worse": "higher"}
+     ]}
+  ],
+  "context": [
+    {"label": "CPI", "kind": "metric", "metric": "^metric_CPI$", "why": "with the score ratio it implies the instruction inflation (score-model check)"},
+    {"label": "kernel CPI", "kind": "metric", "metric": "^metric_kernel_CPI$", "why": "supervisor-mode efficiency"},
+    {"label": "CPU utilization % (window)", "kind": "metric", "metric": "^metric_CPU utilization %$", "why": "below 100% in a saturated run usually means the window includes idle time"},
+    {"label": "kernel-mode utilization %", "kind": "metric", "metric": "^metric_CPU utilization% in kernel mode$", "why": "kernel and hypervisor work"},
+    {"label": "supervisor share of instructions", "kind": "event_ratio", "num": "INST_RETIRED.ANY:SUP", "den": "INST_RETIRED.ANY"},
+    {"label": "supervisor share of cycles", "kind": "event_ratio", "num": "CPU_CLK_UNHALTED.THREAD:SUP", "den": "CPU_CLK_UNHALTED.THREAD"},
+    {"label": "far branches per instr", "kind": "event_per_instr", "event": "BR_INST_RETIRED.FAR_BRANCH", "why": "interrupts, system calls, VM transitions"},
+    {"label": "PAUSE executions per instr", "kind": "metric", "metric": "^metric_core PAUSE instr executions per instr$", "why": "spin/idle polling"},
+    {"label": "instructions per second (window-dependent)", "kind": "event", "event": "INST_RETIRED.ANY", "why": "absolute rate; compare with the score ratio only if the windows match"},
+    {"label": "core frequency GHz", "kind": "metric", "metric": "^metric_CPU operating frequency"},
+    {"label": "EMON window (s)", "kind": "event", "event": "$samplingTime", "why": "about 1/r times the BM window when every window spans its whole run"},
+    {"label": "one-thread-active cycles per cycle", "kind": "event_per_cycle", "event": "CPU_CLK_UNHALTED.ONE_THREAD_ACTIVE", "why": "SMT sibling idle: tail or idle phases inside the window"},
+    {"label": "SMT 2T utilization", "kind": "metric", "metric": "^metric_TMA_Info_System_SMT_2T_Utilization$", "why": "below 1 when SMT siblings idle"},
+    {"label": "return mispredicts per instr", "kind": "event_per_instr", "event": "BR_MISP_RETIRED.RET", "why": "predictor state lost on transitions"},
+    {"label": "branches per instr", "kind": "event_per_instr", "event": "BR_INST_RETIRED.ALL_BRANCHES", "why": "workload-intrinsic: equal for the same binary and input"},
+    {"label": "loads per instr", "kind": "event_per_instr", "event": "MEM_INST_RETIRED.ALL_LOADS", "why": "workload-intrinsic"}
+  ]
+}

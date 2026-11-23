@@ -96,6 +96,12 @@ for dir in "${skills[@]}"; do
       else
         echo "codex:   NOT FOUND - install the OpenAI Codex CLI before delegating tasks"
       fi ;;
+    tma-breakdown)
+      if command -v python3 >/dev/null; then
+        echo "python3: $(python3 --version 2>&1)"
+      else
+        echo "python3: NOT FOUND (required by tma-breakdown)"
+      fi ;;
   esac
 done
 echo "Start a new Claude Code session to load the skills; invoke them with ${names[*]}"
