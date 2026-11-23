@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# Independently run every acceptance check of one task worktree.
+# Usage: run-gates.sh <task-id> <round-label>     e.g. run-gates.sh T3 r2
+#
+# Run it in the background (Claude Code: Bash run_in_background) and read only
+# <task-dir>/gates-<label>/summary.txt. The last line is always DONE; the line
+# before it is RESULT PASS or RESULT FAIL. Full per-gate logs stay beside it for
+# a counted diagnosis.
+#
+# Checks depend on the task.md Mode:
+#   investigate  the worktree must be unchanged; no gates run
+#   docs         every changed file must match DOC_PATHS
+#   refactor     no existing file matching TEST_PATHS may be modified or deleted
+#   all others   optional "Allowed paths" scope, then every gate
+# Added lines matching SUPPRESSION_PATTERN fail; SKIP_PATTERN matches are
+# reported as warnings for review.
+#
+# GATES_FILE lines are `name | shell command`; lines starting with '#' are
+# comments. Each command reads /dev/null, so it cannot consume the list. Commands
+# run in the worktree with WT exported and GATE_ENV applied, for example
+# GATE_ENV='PYTHONPATH=$WT/src' when an editable install points elsewhere.
+# Put a harness check first, such as asserting the imported package path is
+# inside $WT. The worktree is staged with `git add -A` so path checks see new
+# files; review the change afterwards with `git diff --cached`, and only once the
+# summary shows its STAGED line (plain `git diff` races with the staging).
+# For a failing gate, up to ten log lines matching FAIL_PATTERN are copied into
+# the summary, so the first diagnosis needs no full log read.
+
+source "$(dirname "$0")/lib.sh"
+cdl_load
+
+tid=${1:-}; label=${2:-}
+[[ -n $tid && -n $label ]] || die "usage: run-gates.sh <task-id> <round-label>"
+task_paths "$tid"
+[[ -d $WT ]] || die "worktree $WT does not exist"
+task_header
+out=$TD/gates-$label
+mkdir -p "$out"
+summary=$out/summary.txt
+: > "$summary"
+trap 'echo "RESULT FAIL (runner interrupted)" >> "$summary"; echo DONE >> "$summary"' INT TERM
+note() { echo "$*" >> "$summary"; }
+
+export WT
+if [[ -n $GATE_ENV ]]; then eval "export $GATE_ENV"; fi
+cd "$WT"
+git add -A
+note "WORKTREE $WT"
+note "HEAD     $(git log --oneline -1)"
+note "MODE     $TASK_MODE"
+note "STAGED   $(git diff --cached --name-only | wc -l) files"
+failed=0
+
+# Report at most twenty offending paths, then a count.
+offenders() {  # label, newline-separated paths
+  local label=$1 list=$2 count
+  [[ -n $list ]] || return 0
+  count=$(printf '%s\n' "$list" | wc -l)
+  printf '%s\n' "$list" | head -n 20 | sed "s/^/$label /" >> "$summary"
+  (( count <= 20 )) || note "$label ... and $((count - 20)) more"
+  failed=1
+}
+
+changed=$(git diff --cached --name-only)
+case $TASK_MODE in
+  investigate)
+    offenders "CHANGED" "$changed"
+    [[ -n $changed ]] || note "UNCHANGED worktree has no changes, as investigate mode requires"
+    ;;
+  docs)
+    offenders "NONDOC" "$(printf '%s\n' "$changed" | grep -vE "$DOC_PATHS" | grep . || true)"
+    ;;
+  refactor)
+    offenders "TESTEDIT" "$(git diff --cached --name-status | awk '$1 ~ /^(M|D|R)/ {print $2}' |
+      grep -E "$TEST_PATHS" || true)"
+    ;;
+esac
+
+if [[ -n $TASK_ALLOWED && $TASK_MODE != investigate ]]; then
+  outside=""
+  while IFS= read -r path; do
+    [[ -n $path ]] || continue
+    path_allowed "$path" "$TASK_ALLOWED" || outside+="$path"$'\n'
+  done <<< "$changed"
+  offenders "SCOPE" "${outside%$'\n'}"
+  [[ -n $outside ]] || note "SCOPE    all staged files are within Allowed paths"
+fi
+
+count=0
+if [[ $TASK_MODE != investigate ]]; then
+  [[ -f $GATES_FILE ]] || die "gates file $GATES_FILE not found"
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
+    [[ $line == *"|"* ]] || { note "BADLINE  $line"; failed=1; continue; }
+    name=$(echo "${line%%|*}" | xargs)
+    cmd=${line#*|}
+    [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || { note "BADNAME  $name"; failed=1; continue; }
+    count=$((count + 1))
+    start=$SECONDS
+    set +e
+    bash -c "$cmd" < /dev/null > "$out/$name.log" 2>&1
+    rc=$?
+    set -e
+    (( rc == 0 )) || failed=1
+    printf '%-16s rc=%-3d %5ds | %s\n' "$name" "$rc" $((SECONDS - start)) \
+      "$(tail -n 1 "$out/$name.log" | cut -c1-140)" >> "$summary"
+    if (( rc != 0 )); then
+      grep -E "$FAIL_PATTERN" "$out/$name.log" | head -n 10 | cut -c1-160 |
+        sed 's/^/    fail: /' >> "$summary" || true
+    fi
+  done < "$GATES_FILE"
+  (( count > 0 )) || { note "NOGATES  $GATES_FILE has no gate lines"; failed=1; }
+fi
+
+added_lines=$(git diff --cached -U0 | grep -E '^\+[^+]' || true)
+suppressions=$(printf '%s\n' "$added_lines" | grep -cE "$SUPPRESSION_PATTERN" || true)
+skips=$(printf '%s\n' "$added_lines" | grep -cE "$SKIP_PATTERN" || true)
+note "SUPPRESSIONS added=$suppressions"
+(( suppressions == 0 )) || failed=1
+(( skips == 0 )) || note "WARNING  added=$skips test-skip markers; review them before accepting"
+
+trap - INT TERM
+if (( failed )); then note "RESULT FAIL"; else note "RESULT PASS"; fi
+note "DONE"
+exit "$failed"

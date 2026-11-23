@@ -1,0 +1,12 @@
+<tag>: <lowercase title describing the main outcome>
+
+<Paragraph 1: the behavior, problem or need before this change, stated only
+with verified facts.>
+
+<Paragraph 2: what the change does, which invariants it keeps, which
+historical behavior is proven unchanged and how, and the fresh acceptance
+evidence (the gate run you just read, real-data or replay checks you ran).
+Name anything that remains unexercised.>
+
+Co-Authored-By: OpenAI Codex <noreply@openai.com>
+Signed-off-by: <Verified Author> <author@example.com>

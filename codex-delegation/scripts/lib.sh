@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# Shared configuration and helpers for the codex-delegation scripts.
+# Every script sources this file; it never runs Codex or mutates a repository.
+
+set -euo pipefail
+
+SKILL_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+MODES="implement refactor docs investigate"
+VERIFIED_CODEX_VERSIONS="0.162.1"
+
+die() { echo "error: $*" >&2; exit 2; }
+
+# Load the per-project configuration. CDL_CONF overrides the default
+# ./codex-delegation.conf so one machine can drive several repositories.
+# Precedence: the project file, then PRESET defaults, then built-in defaults.
+cdl_load() {
+  local conf=${CDL_CONF:-./codex-delegation.conf}
+  [[ -f $conf ]] || die "configuration $conf not found; copy $SKILL_DIR/templates/codex-delegation.conf and set CDL_CONF"
+  # shellcheck disable=SC1090
+  source "$conf"
+  if [[ -n ${PRESET:-} ]]; then
+    local preset=$SKILL_DIR/templates/presets/$PRESET.conf
+    [[ -f $preset ]] || die "unknown PRESET '$PRESET'; see $SKILL_DIR/templates/presets"
+    # shellcheck disable=SC1090
+    source "$preset"
+  fi
+  [[ -n ${REPO:-} ]] || die "REPO is not set in $conf"
+  REPO=$(cd "$REPO" && pwd)
+  git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 || die "REPO=$REPO is not a git repository"
+  BASE_BRANCH=${BASE_BRANCH:-$(git -C "$REPO" symbolic-ref --short HEAD)}
+  WT_ROOT=${WT_ROOT:-${REPO}-wt}
+  TASKS_ROOT=${TASKS_ROOT:-${REPO}-tasks}
+  GATES_FILE=${GATES_FILE:-$TASKS_ROOT/gates.txt}
+  SETUP_HOOK=${SETUP_HOOK:-}
+  MIN_FREE_GB=${MIN_FREE_GB:-3}
+  CODEX_SANDBOX=${CODEX_SANDBOX:-workspace-write}
+  CODEX_EXTRA_ARGS=${CODEX_EXTRA_ARGS:-}
+  SUPPRESSION_PATTERN=${SUPPRESSION_PATTERN:-'noqa|type: ignore|pylint: disable|pragma: no cover|eslint-disable|@ts-ignore|@ts-expect-error|NOLINT|@SuppressWarnings|#\[allow\(|//nolint'}
+  SKIP_PATTERN=${SKIP_PATTERN:-'\.skip\(|pytest\.mark\.skip|t\.Skip\(|#\[ignore\]|@Disabled|@Ignore|DISABLED_'}
+  FAIL_PATTERN=${FAIL_PATTERN:-'^(FAILED|ERROR)[ :]'}
+  TEST_PATHS=${TEST_PATHS:-'(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*$|_test\.[a-z]+$|\.(test|spec)\.[a-z]+$|Tests?\.java$'}
+  DOC_PATHS=${DOC_PATHS:-'\.(md|rst|txt|adoc)$|(^|/)docs?/'}
+  REPORT_MAX_LINES=${REPORT_MAX_LINES:-80}
+  MAX_ROUNDS=${MAX_ROUNDS:-3}
+  MAX_FULL_READS=${MAX_FULL_READS:-3}
+  DELIVERY=${DELIVERY:-ff-merge}
+  case $DELIVERY in ff-merge|branch-only|patch) ;; *) die "DELIVERY must be ff-merge, branch-only or patch (got $DELIVERY)" ;; esac
+  MSG_FILE_CHECK=${MSG_FILE_CHECK:-}
+  MSG_COMMIT_CHECK=${MSG_COMMIT_CHECK:-}
+  GATE_ENV=${GATE_ENV:-}
+}
+
+# Resolve the worktree and task directory of one task identifier.
+task_paths() {
+  TID=${1:?task id required}
+  [[ $TID =~ ^[A-Za-z0-9._-]+$ ]] || die "task id '$TID' may contain only letters, digits, '.', '_' and '-'"
+  WT=$WT_ROOT/$TID
+  TD=$TASKS_ROOT/$TID
+}
+
+# Read the task header fields from the first 30 lines of task.md:
+#   Mode: implement|refactor|docs|investigate     (default implement)
+#   Allowed paths: src/foo/*, tests/test_foo*      (optional scope globs)
+#   Sandbox: read-only|workspace-write             (optional override)
+task_header() {
+  local file=$TD/task.md value
+  TASK_MODE=implement; TASK_ALLOWED=""; TASK_SANDBOX=""
+  [[ -f $file ]] || return 0
+  value=$(head -n 30 "$file" | sed -n 's/^Mode:[[:space:]]*//p' | head -n 1 | xargs || true)
+  [[ -z $value ]] || TASK_MODE=$value
+  [[ " $MODES " == *" $TASK_MODE "* ]] || die "task.md Mode '$TASK_MODE' is not one of: $MODES"
+  TASK_ALLOWED=$(head -n 30 "$file" | sed -n 's/^Allowed paths:[[:space:]]*//p' | head -n 1 || true)
+  value=$(head -n 30 "$file" | sed -n 's/^Sandbox:[[:space:]]*//p' | head -n 1 | xargs || true)
+  case $value in
+    "") ;;
+    read-only|workspace-write) TASK_SANDBOX=$value ;;
+    *) die "task.md Sandbox '$value' must be read-only or workspace-write" ;;
+  esac
+}
+
+# The sandbox a task runs in: investigate is read-only unless overridden.
+task_sandbox() {
+  if [[ -n $TASK_SANDBOX ]]; then echo "$TASK_SANDBOX"
+  elif [[ $TASK_MODE == investigate ]]; then echo read-only
+  else echo "$CODEX_SANDBOX"; fi
+}
+
+# The Codex instructions for a mode: a project override in TASKS_ROOT/modes,
+# otherwise the packaged one.
+mode_file() {
+  local own=$TASKS_ROOT/modes/$1.md
+  if [[ -f $own ]]; then echo "$own"; else echo "$SKILL_DIR/templates/modes/$1.md"; fi
+}
+
+# Whether a repository path matches one comma-separated glob list. In these
+# patterns `*` also matches '/', so `src/foo/*` covers the whole subtree.
+path_allowed() {
+  local path=$1 list=$2 glob
+  IFS=',' read -ra globs <<< "$list"
+  for glob in "${globs[@]}"; do
+    glob=$(echo "$glob" | xargs)
+    [[ -n $glob ]] || continue
+    # shellcheck disable=SC2053
+    [[ $path == $glob ]] && return 0
+  done
+  return 1
+}
+
+# Free space, in whole GiB, of the filesystem that holds a path or its parent.
+free_gb() {
+  local path=$1
+  while [[ ! -e $path ]]; do path=$(dirname "$path"); done
+  df -Pk "$path" | awk 'NR == 2 { printf "%d", $4 / 1048576 }'
+}
+
+# Check a report's protocol shape so the planner can read the STATUS line
+# first and notice drift without opening a malformed report in full.
+report_check() {
+  local report=$1 lines status
+  if [[ ! -s $report ]]; then echo "REPORT MISSING $report"; return 1; fi
+  lines=$(wc -l < "$report")
+  status=$(head -n 5 "$report" | grep -m1 -oE 'STATUS: *[A-Z]+' | awk '{print $2}' || true)
+  echo "REPORT STATUS=${status:-UNKNOWN} lines=$lines $report"
+  [[ -n $status ]] || echo "REPORT WARNING: no STATUS line in the first 5 lines"
+  (( lines <= REPORT_MAX_LINES )) || echo "REPORT WARNING: $lines lines exceed $REPORT_MAX_LINES"
+}
+
+# Extract the Codex run header and token count from one log (codex-cli prints
+# `sandbox:`, `model:` and `session id:` lines first and `tokens used` followed
+# by the count last), and warn when the applied sandbox differs from the request.
+codex_meta() {
+  local log=$1 expected=$2 sandbox model tokens
+  sandbox=$(head -n 20 "$log" | sed -n 's/^sandbox:[[:space:]]*\([a-z-]*\).*/\1/p' | head -n 1)
+  model=$(head -n 20 "$log" | sed -n 's/^model:[[:space:]]*//p' | head -n 1)
+  tokens=$(grep -A1 '^tokens used' "$log" | tail -n 1 | tr -dc '0-9' || true)
+  echo "CODEX model=${model:-unknown} sandbox=${sandbox:-unknown} tokens=${tokens:-unknown}"
+  if [[ -n $sandbox && $sandbox != "$expected" ]]; then
+    echo "CODEX WARNING: requested sandbox $expected but the run reports $sandbox"
+  fi
+}
+
+# The next unused round number for a task, counting report.md as round 1.
+next_round() {
+  local n=2
+  while [[ -e $TD/report-r$n.md ]]; do n=$((n + 1)); done
+  echo "$n"
+}
