@@ -325,6 +325,31 @@ grep -q "round 1 GUARD PASS" "$tmp/g4.out" && [[ ! -d $tmp/repo-wt/T4 ]] || fail
 grep -qE '^G1 .* FAIL ' "$tmp/gstatus.out" && grep -qE '^G3 .* ack ' "$tmp/gstatus.out" && grep -qE '^G4 .* ok ' "$tmp/gstatus.out" || fail "ledger guard column: $(cat "$tmp/gstatus.out")"
 ok "new-task, gates and delivery of other tasks during a round pass the guard"
 
+# --- parallel gate runs ------------------------------------------------------------
+slots=$tasks/.gate-slots
+mkdir -p "$slots"
+sleep 0 & dead=$!; wait "$dead"
+ln -s "$dead" "$slots/slot-1"
+"$scripts/run-gates.sh" T2 q1 > /dev/null || fail "gates with a stale slot: $(summary T2 q1)"
+summary T2 q1 | grep -q "^SLOT     1 of 1 after" && [[ ! -e $slots/slot-1 ]] || fail "stale slot reclaim and release: $(summary T2 q1)"
+sleep 60 & holder=$!
+ln -s "$holder" "$slots/slot-1"
+"$scripts/run-gates.sh" T2 q2 > /dev/null & runner=$!
+for _ in $(seq 1 50); do grep -q '^QUEUED' "$tasks/T2/gates-q2/summary.txt" 2>/dev/null && break; sleep 0.2; done
+summary T2 q2 | grep -q "^QUEUED" && ! summary T2 q2 | grep -q "^harness" || fail "a taken slot must queue the run: $(summary T2 q2)"
+kill "$holder"; wait "$holder" 2>/dev/null || true
+wait "$runner" || fail "queued run: $(summary T2 q2)"
+summary T2 q2 | grep -qx "RESULT PASS" || fail "queued run result: $(summary T2 q2)"
+MAX_PARALLEL_GATES=0 "$scripts/run-gates.sh" T2 q3 > /dev/null
+! summary T2 q3 | grep -q "^SLOT" || fail "MAX_PARALLEL_GATES=0 takes no slot"
+printf 'slow | sleep 2\nafter | true\n' > "$tmp/slow.txt"
+"$scripts/run-gates.sh" T2 q4 --gates "$tmp/slow.txt" > /dev/null 2>&1 & runner=$!
+for _ in $(seq 1 50); do grep -q '^SLOT' "$tasks/T2/gates-q4/summary.txt" 2>/dev/null && break; sleep 0.2; done
+kill -TERM "$runner"; wait "$runner" 2>/dev/null || true
+[[ $(tail -n 2 "$tasks/T2/gates-q4/summary.txt" | head -n 1) == "RESULT FAIL (runner interrupted)" && $(tail -n 1 "$tasks/T2/gates-q4/summary.txt") == DONE ]] &&
+  ! summary T2 q4 | grep -q "^after" && [[ ! -e $slots/slot-1 ]] || fail "an interrupted run must stop and release its slot: $(summary T2 q4)"
+ok "gate runs queue for MAX_PARALLEL_GATES slots, reclaim a dead owner's slot, stop on interrupt, and 0 disables the limit"
+
 # --- investigate mode ----------------------------------------------------------
 "$scripts/new-task.sh" Q1 inv/q1 > /dev/null
 task Q1 investigate

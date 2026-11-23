@@ -32,8 +32,9 @@ scripts/
                          arguments every round; mode sandbox, round breaker, report shape,
                          applied sandbox, model and effort drift, token count, and a
                          repository guard (refs, branches, shared git files, other checkouts)
-  run-gates.sh           mode checks, scope, full or focused gates with CHANGED_FILES,
-                         suppressions, skip markers; summary ends with DONE
+  run-gates.sh           mode checks, guard, scope, full or focused gates with CHANGED_FILES,
+                         at most MAX_PARALLEL_GATES runs at once, suppressions, skip markers;
+                         summary ends with DONE
   pipeline.sh            one background round: Codex, then gates and diff checks
   finish-task.sh         require PASS, check the message, commit, deliver, remove the worktree
   ledger.sh              full-read breaker, guard-ack, void (environment-failed rounds),

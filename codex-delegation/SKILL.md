@@ -122,6 +122,13 @@ A full gate list can take hours. Run it once per delivery, not per round:
   integration defect, so fix it in a dedicated integration task instead of
   reopening the original ones.
 - The full gate before any delivery to the base branch cannot be skipped.
+- At most `MAX_PARALLEL_GATES` gate runs of one configuration execute at once
+  (default 1, 0 = no limit); a later run waits, and its summary shows `QUEUED`
+  and then `SLOT`. Parallel runs are not free: they compete for CPU, memory
+  and I/O, so each one takes longer and timing-sensitive tests fail at random,
+  and they share whatever is not per worktree (ports, caches, services). The
+  queue time is part of a round's wall time, so start the next round's work,
+  not another gate run, while one runs.
 
 ## Token economy: the exchange protocol
 

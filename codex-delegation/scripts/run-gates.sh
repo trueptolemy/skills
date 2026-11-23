@@ -40,6 +40,9 @@
 # summary shows its STAGED line (plain `git diff` races with the staging).
 # For a failing gate, up to ten log lines matching FAIL_PATTERN are copied into
 # the summary, so the first diagnosis needs no full log read.
+# At most MAX_PARALLEL_GATES runs of this configuration execute gates at once
+# (default 1, 0 = no limit); a later run waits and its summary shows QUEUED,
+# then the SLOT it got and how long it waited.
 
 source "$(dirname "$0")/lib.sh"
 cdl_load
@@ -64,8 +67,36 @@ out=$TD/gates-$label
 mkdir -p "$out"
 summary=$out/summary.txt
 : > "$summary"
-trap 'echo "RESULT FAIL (runner interrupted)" >> "$summary"; echo DONE >> "$summary"' INT TERM
 note() { echo "$*" >> "$summary"; }
+trap 'note "RESULT FAIL (runner interrupted)"; note DONE; exit 130' INT TERM
+
+# Gate slots. A slot is a symlink in TASKS_ROOT/.gate-slots whose target is
+# its owner's pid: creating it is atomic, and a slot whose owner has died is
+# removed and taken again.
+slot=""
+release_slot() {
+  [[ -z $slot || $(readlink "$slot" 2>/dev/null) != "$$" ]] || rm -f "$slot"
+  slot=""
+}
+take_slot() {
+  local dir=$TASKS_ROOT/.gate-slots k owner start=$SECONDS queued=0
+  mkdir -p "$dir"
+  while :; do
+    for (( k = 1; k <= MAX_PARALLEL_GATES; k++ )); do
+      if ln -s "$$" "$dir/slot-$k" 2>/dev/null; then
+        slot=$dir/slot-$k
+        note "SLOT     $k of $MAX_PARALLEL_GATES after $((SECONDS - start))s"
+        return
+      fi
+      owner=$(readlink "$dir/slot-$k" 2>/dev/null || true)
+      if [[ -n $owner ]] && ! kill -0 "$owner" 2>/dev/null; then rm -f "$dir/slot-$k"; fi
+    done
+    (( queued )) || note "QUEUED   all $MAX_PARALLEL_GATES gate slot(s) are taken (MAX_PARALLEL_GATES)"
+    queued=1
+    sleep 2
+  done
+}
+trap release_slot EXIT
 
 export WT
 task_tmp
@@ -129,6 +160,7 @@ fi
 count=0
 if [[ $TASK_MODE != investigate && $TASK_MODE != operate ]]; then
   [[ -f $gates ]] || die "gates file $gates not found"
+  (( MAX_PARALLEL_GATES == 0 )) || take_slot
   while IFS= read -r line || [[ -n $line ]]; do
     [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
     [[ $line == *"|"* ]] || { note "BADLINE  $line"; failed=1; continue; }
@@ -150,6 +182,7 @@ if [[ $TASK_MODE != investigate && $TASK_MODE != operate ]]; then
     fi
   done < "$gates"
   (( count > 0 )) || { note "NOGATES  $gates has no gate lines"; failed=1; }
+  release_slot
 fi
 
 added_lines=$(git diff --cached -U0 | grep -E '^\+[^+]' || true)

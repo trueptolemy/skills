@@ -57,6 +57,8 @@ cdl_load() {
   REPORT_MAX_LINES=${REPORT_MAX_LINES:-80}
   MAX_ROUNDS=${MAX_ROUNDS:-3}
   MAX_FULL_READS=${MAX_FULL_READS:-3}
+  MAX_PARALLEL_GATES=${MAX_PARALLEL_GATES:-1}
+  [[ $MAX_PARALLEL_GATES =~ ^[0-9]+$ ]] || die "MAX_PARALLEL_GATES must be a number (0 = no limit), got $MAX_PARALLEL_GATES"
   DELIVERY=${DELIVERY:-ff-merge}
   case $DELIVERY in ff-merge|branch-only|patch) ;; *) die "DELIVERY must be ff-merge, branch-only or patch (got $DELIVERY)" ;; esac
   MSG_FILE_CHECK=${MSG_FILE_CHECK:-}

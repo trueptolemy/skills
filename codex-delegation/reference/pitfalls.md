@@ -169,6 +169,13 @@ branches and combined integration gates.
 - Fix: Codex runs focused checks only; `pipeline.sh` runs the full list once
   per delivery and `--focused` for intermediate rounds (see SKILL.md, Gates).
 
+**Full gate runs in parallel slow each other down.**
+- Trap: several full gate runs started together competed for the host and
+  removed each other's temporary directories; each took longer than running
+  them one after another would have, and some failures were artifacts.
+- Fix: `MAX_PARALLEL_GATES` (default 1) queues gate runs of one
+  configuration; temporary files stay in each worktree's `.tmp/`.
+
 **Tests run while a measurement uses the same host.**
 - Fix: mark parallel tasks `Quiet: yes`. Codex then writes code without running
   anything heavy, and the planner runs the focused checks after the
