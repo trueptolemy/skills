@@ -22,9 +22,9 @@
 #        worktree. The index is unstaged first because the gate runner stages it.
 # continue resumes with a standard "finish the work and write the report"
 #        message. Use it when a round stopped early: its report has no STATUS
-#        line, or it is a progress note. If the log tail shows a provider or
-#        transport error, restart the Codex service first (for example
-#        `codex app-server daemon restart`).
+#        line, or it is a progress note. If the log tail shows an API error,
+#        first close Codex (stop the round's job; no `codex exec` of the task
+#        may be left) and run `codex app-server daemon restart`.
 # A feedback file may already be named feedback-rN.md inside the task
 # directory; it is not copied onto itself.
 # --dry-run prints the Codex command and writes nothing.

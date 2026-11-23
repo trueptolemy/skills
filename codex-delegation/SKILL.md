@@ -130,9 +130,8 @@ Rules:
 - If `report_check` warns of an over-long report, ask for a conforming report
   in the next feedback instead of reading a malformed one in full. A report
   with no STATUS line that reads like a progress note means the round stopped
-  early. Check the log tail for a provider or transport error; if there is
-  one, restart the Codex service (for example `codex app-server daemon
-  restart`), then run `run-codex.sh continue <id>`.
+  early. Check the log tail for an API error; if there is one, follow
+  "API errors" below, otherwise run `run-codex.sh continue <id>`.
 - Track cost per task: `run-codex.sh` records each round's model, applied
   sandbox and `tokens used` in `rounds.log`; `scripts/ledger.sh status` sums
   them with rounds, report status and gate result. Optional cost lever:
@@ -261,6 +260,29 @@ start Codex only after they confirm it.
   task changes, of the literal text of a message it changes, or of a refusal
   it removes may change only to the new value. In one program four BLOCKED
   rounds were exactly these cases.
+
+## API errors: close Codex, restart the daemon, relaunch
+
+An API error (for example an HTTP 429 or 5xx status, a disconnected stream or
+repeated reconnect attempts) either ends a round before its report or leaves
+Codex retrying while its log stops growing. Check the round's log tail
+(`tail -n 20`; this is not a full read). If it shows an API error:
+
+1. Close Codex. Stop the background job that runs the round (Claude Code:
+   TaskStop), then check with `pgrep -a codex` that no `codex exec` of this
+   task is left; a resumed round runs in the worktree
+   (`readlink /proc/<pid>/cwd`). In an operate stage, first check that no
+   operation Codex started is still running.
+2. Run `codex app-server daemon restart`.
+3. Restart Codex in the same session, in the background:
+   `scripts/pipeline.sh continue <id>` (or `run-codex.sh continue <id>`). It
+   sends a standard "finish and write the report" message, so no feedback file
+   is needed and the session keeps its findings.
+
+If other Codex tasks run in parallel, check them after the restart and continue
+any whose round stopped. If the same error returns after one restart, stop and
+report it to the user: authentication, quota or the provider configuration is
+then the likely cause, and further restarts will not fix it.
 
 ## Operate stages (real systems, only with the user's authorization)
 

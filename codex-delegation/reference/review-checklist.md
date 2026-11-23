@@ -17,7 +17,9 @@ Count every full log or full diff read made for diagnosis.
       before any delivery; a focused list suffices only for intermediate
       rounds and trial versions.
 - [ ] A report with no STATUS line is a stopped round: check the log tail for
-      a provider error and use `run-codex.sh continue`, not a new feedback.
+      an API error and use `run-codex.sh continue`, not a new feedback. After
+      an API error, first close Codex and run
+      `codex app-server daemon restart`.
 - [ ] The first gate (harness or import-path check) passed, so the run tested
       this worktree.
 - [ ] `SUPPRESSIONS added=0`, and generated output (build artifacts) matches

@@ -38,10 +38,12 @@ branches and combined integration gates.
 - Trap: twice a round ended with a one-line progress note as its "report"
   (`REPORT STATUS=UNKNOWN`), and once a provider HTTP 500 ended the first
   request of a long run.
-- Fix: check the log tail for a provider or transport error. If there is one,
-  restart the Codex service (for example `codex app-server daemon restart`),
-  then run `run-codex.sh continue <id>`, which sends a standard "finish and
-  write the report" message into the same session.
+- Fix: check the log tail for an API error. If there is one, close Codex
+  (stop the round's background job and check that no `codex exec` of the
+  task is left), run `codex app-server daemon restart`, then restart Codex
+  with `run-codex.sh continue <id>`, which sends a standard "finish and write
+  the report" message into the same session. Without an API error, run
+  `continue` directly. The procedure is in "API errors" in SKILL.md.
 
 **A background job reads a worktree whose branch changed.**
 - Trap: a verification job ran from a worktree in which the planner then

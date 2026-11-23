@@ -125,6 +125,8 @@ $S/new-task.sh T1 codex/t1-foo                 # chained task: --from codex/t0-b
 $S/pipeline.sh start T1                        # background: Codex, then the full gates and diff checks
 $S/pipeline.sh resume T1 feedback-x.md --focused   # intermediate round: focused gates only
 $S/run-codex.sh continue T1                    # a round stopped before its report
+                                               # after an API error: close Codex and run
+                                               # `codex app-server daemon restart` first
 $S/run-gates.sh T1 r3                          # full gates alone; read only T1/gates-r3/summary.txt
 $S/finish-task.sh T1 commit-msg.txt            # on success: commit, deliver, remove worktree
 $S/ledger.sh status                            # rounds, tokens, report and gate state per task

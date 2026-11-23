@@ -141,7 +141,7 @@ report_check() {
   echo "REPORT STATUS=${status:-UNKNOWN} lines=$lines $report"
   if [[ -z $status ]]; then
     echo "REPORT WARNING: no STATUS line in the first 5 lines"
-    echo "REPORT HINT: the round may have stopped early; check the log tail for a provider error, restart the Codex service if needed, then run run-codex.sh continue $TID"
+    echo "REPORT HINT: the round may have stopped early; check the log tail for an API error; if there is one, close Codex and run codex app-server daemon restart; then run run-codex.sh continue $TID"
   fi
   (( lines <= REPORT_MAX_LINES )) || echo "REPORT WARNING: $lines lines exceed $REPORT_MAX_LINES"
 }
