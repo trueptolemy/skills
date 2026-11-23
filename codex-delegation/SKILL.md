@@ -132,10 +132,16 @@ Rules:
   with no STATUS line that reads like a progress note means the round stopped
   early. Check the log tail for an API error; if there is one, follow
   "API errors" below, otherwise run `run-codex.sh continue <id>`.
-- Track cost per task: `run-codex.sh` records each round's model, applied
-  sandbox and `tokens used` in `rounds.log`; `scripts/ledger.sh status` sums
-  them with rounds, report status and gate result. Optional cost lever:
-  per-task model or effort through `CODEX_EXTRA_ARGS`.
+- Track cost per task: `run-codex.sh` records each round's model, effort,
+  applied sandbox and `tokens used` in `rounds.log`; `scripts/ledger.sh status`
+  sums them with rounds, report status and gate result.
+- Every round of a task, start and resume alike, passes the same Codex
+  arguments: the sandbox, `CODEX_MODEL`, `CODEX_EFFORT` and `CODEX_EXTRA_ARGS`.
+  A resumed round given fewer arguments silently falls back to the global
+  Codex configuration. `run-codex.sh` warns of model or effort drift when a
+  round reports values other than the configured ones, or, when none are
+  configured, other than round 1's. Treat a drift warning like a sandbox
+  warning: the round did not run as configured.
 
 ## Phase 0: preflight (no model calls)
 
@@ -149,14 +155,18 @@ Rules:
    `templates/focused.example` to `focused.txt` and adapt it: the tests for
    `CHANGED_FILES` and their consumers, plus fast static checks.
 2. Run `scripts/doctor.sh`. It checks git, the Codex CLI version against the
-   verified list and the exec/resume flags the scripts use, and the project
-   configuration, without calling a model. An unverified Codex version means
-   the scripts' assumptions about its flags and log format are untested.
+   verified list and the exec/resume flags the scripts use, that every
+   `CODEX_EXTRA_ARGS` flag is accepted by both `codex exec` and
+   `codex exec resume`, and the project configuration, without calling a
+   model. An unverified Codex version means the scripts' assumptions about its
+   flags and log format are untested.
 3. Authentication: `codex login status` reflects only an OpenAI account. With
    another provider configured in `~/.codex/config.toml` (for example Bedrock),
    "Not logged in" can be normal. Inspect the provider name without printing
    secrets. After the user approves, run `scripts/doctor.sh --smoke`: one tiny
-   paid call that also verifies the log lines the scripts parse.
+   paid call with the arguments every round uses (read-only sandbox). It
+   proves the model ID and effort the tasks will run and verifies the log
+   lines the scripts parse.
 4. **Validate the acceptance harness itself.** Run `new-task.sh baseline
    baseline-check`, then `run-gates.sh baseline r0` in the background. If the
    baseline is not green, either fix it as task T0 or agree with the user that
@@ -211,9 +221,10 @@ start Codex only after they confirm it.
    `scripts/pipeline.sh start <id>` (Codex, then gates and diff checks), or
    `scripts/run-codex.sh start <id>` for Codex alone. Wait for the completion
    notification.
-4. Read the `REPORT STATUS=... lines=...` and `CODEX ... sandbox=... tokens=...`
-   lines printed by `run-codex.sh` (a sandbox warning means the run did not get
-   the requested isolation), then `report.md` (at most 80 lines).
+4. Read the `REPORT STATUS=... lines=...` and
+   `CODEX model=... effort=... sandbox=... tokens=...` lines printed by
+   `run-codex.sh` (a sandbox, model or effort warning means the round did not
+   run as configured), then `report.md` (at most 80 lines).
 5. Accept, following [review-checklist.md](reference/review-checklist.md):
    - read the gate summary `pipeline.sh` printed, or run
      `scripts/run-gates.sh <id> r<N>` in the background and read only

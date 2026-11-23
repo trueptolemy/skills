@@ -19,9 +19,10 @@ task() {  # id mode [allowed]
     echo; echo "Do the selftest change."; } > "$tasks/$1/task.md"
 }
 
-# A fake codex that prints a codex-cli style header (sandbox, model, session
-# id) and a final `tokens used` count. `exec` edits the worktree unless
-# FAKE_NO_EDIT is set; FAKE_SANDBOX makes the header lie about the sandbox;
+# A fake codex that prints a codex-cli style header (model, approval, sandbox,
+# reasoning effort, session id) and a final `tokens used` count. It honours -m
+# and the -c keys the scripts pass. `exec` edits the worktree unless
+# FAKE_NO_EDIT is set; FAKE_SANDBOX and FAKE_MODEL make the header lie;
 # FAKE_BAD_REPORT writes a report without STATUS that is too long.
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/codex" <<'EOF'
@@ -31,26 +32,36 @@ set -euo pipefail
 [[ ${1:-} == exec ]] || exit 64
 shift
 if [[ ${1:-} == --help ]]; then
-  echo "-C, --cd <DIR>  -s, --sandbox <MODE> [read-only, workspace-write]  -o, --output-last-message <FILE>"; exit 0
+  echo "-c, --config <key=value>  -m, --model <MODEL>  -C, --cd <DIR>  -s, --sandbox <MODE> [read-only, workspace-write, danger-full-access]  -o, --output-last-message <FILE>  -p, --profile <P>"; exit 0
 fi
 if [[ ${1:-} == resume && ${2:-} == --help ]]; then
-  echo "-c, --config <key=value>  -o, --output-last-message <FILE>"; exit 0
+  echo "-c, --config <key=value>  -m, --model <MODEL>  -o, --output-last-message <FILE>"; exit 0
 fi
-report=""; wt=$PWD; resume=0; sandbox=unknown
+report=""; wt=$PWD; resume=0; sandbox=unknown; model=fake-default; effort=medium; approval=on-request
+stdin=0; prompt=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     resume) resume=1; shift ;;
     -C) wt=$2; shift 2 ;;
     -s) sandbox=$2; shift 2 ;;
-    -c) sandbox=$(echo "$2" | sed -n 's/^sandbox_mode="\(.*\)"$/\1/p'); shift 2 ;;
-    -m) shift 2 ;;
+    -m) model=$2; shift 2 ;;
+    -c) value=${2#*=}; value=${value//\"/}
+        case $2 in
+          sandbox_mode=*) sandbox=$value ;;
+          model_reasoning_effort=*) effort=$value ;;
+          approval_policy=*) approval=$value ;;
+        esac
+        shift 2 ;;
     -o) report=$2; shift 2 ;;
-    *) shift ;;
+    -) stdin=1; shift ;;
+    -*) shift ;;
+    *) prompt=$1; shift ;;
   esac
 done
-cat > /dev/null
-printf 'OpenAI Codex v0.0.0-fake\n--------\nworkdir: %s\nmodel: fake-model\nsandbox: %s [workdir]\nsession id: 0123abcd-1111-2222-3333-444455556666\n--------\n' \
-  "$wt" "${FAKE_SANDBOX:-$sandbox}"
+(( ! stdin )) || cat > /dev/null
+printf 'OpenAI Codex v0.0.0-fake\n--------\nworkdir: %s\nmodel: %s\nprovider: fake\napproval: %s\nsandbox: %s [workdir]\nreasoning effort: %s\nsession id: 0123abcd-1111-2222-3333-444455556666\n--------\n' \
+  "$wt" "${FAKE_MODEL:-$model}" "$approval" "${FAKE_SANDBOX:-$sandbox}" "$effort"
+if [[ $prompt == *"exactly the word OK"* ]]; then echo OK > "$report"; printf 'tokens used\n12\n'; exit 0; fi
 if [[ -z ${FAKE_NO_EDIT:-} ]]; then
   if (( resume )); then echo "second" >> "$wt/feature.txt"; else echo "first" > "$wt/feature.txt"; fi
 fi
@@ -82,6 +93,8 @@ TASKS_ROOT=$tasks
 GATES_FILE=$tasks/gates.txt
 PRESET=python
 MIN_FREE_GB=0
+CODEX_MODEL=fake-model
+CODEX_EFFORT=high
 GATE_ENV='MARKER=\$WT/marker'
 MSG_FILE_CHECK='grep -q "^Co-Authored-By: " {file}'
 MSG_COMMIT_CHECK='git log -1 --format=%B {rev} | grep -q "^Co-Authored-By: "'
@@ -115,7 +128,17 @@ grep -q "WARN  codex 0.0.0 is not in the verified list" "$tmp/doctor.out" || fai
 grep -q "PASS  codex exec resume supports --config" "$tmp/doctor.out" || fail "doctor resume probe"
 grep -q "PASS  gates file" "$tmp/doctor.out" || fail "doctor project checks"
 grep -q "WARN  focused gates file .* is missing" "$tmp/doctor.out" || fail "doctor focused-gates warning"
+grep -qF 'PASS  every round passes: -c sandbox_mode=\"workspace-write\" -m fake-model -c model_reasoning_effort=\"high\"' "$tmp/doctor.out" || fail "doctor round arguments"
 ok "doctor probes CLI flags, flags an unverified version and placeholders, and fails on a missing common.md"
+
+{ cat "$CDL_CONF"; echo "CODEX_EXTRA_ARGS='-p fast'"; } > "$tmp/profile.conf"
+expect_fail env CDL_CONF="$tmp/profile.conf" "$scripts/doctor.sh"
+grep -q "FAIL  CODEX_EXTRA_ARGS flag -p is not accepted by codex exec resume" "$tmp/last.out" || fail "doctor resume-flag check"
+"$scripts/doctor.sh" --smoke < /dev/null > "$tmp/smoke.out" || fail "doctor smoke: $(cat "$tmp/smoke.out")"
+grep -q "smoke CODEX model=fake-model effort=high sandbox=read-only" "$tmp/smoke.out" && grep -q "PASS  log reports the model CODEX_MODEL=fake-model" "$tmp/smoke.out" || fail "smoke arguments: $(cat "$tmp/smoke.out")"
+FAKE_MODEL=other expect_fail "$scripts/doctor.sh" --smoke < /dev/null
+grep -q "FAIL  the run reports another model than CODEX_MODEL=fake-model" "$tmp/last.out" || fail "smoke model check"
+ok "doctor refuses extra flags resume lacks; smoke runs with the round arguments and proves the model"
 
 # --- implement mode, rounds, breakers ------------------------------------------
 "$scripts/new-task.sh" T1 feat/t1 > /dev/null
@@ -124,11 +147,11 @@ expect_fail "$scripts/new-task.sh" T1 feat/t1
 ok "new-task creates worktree, branch and task files and refuses a duplicate"
 task T1 implement "feature.txt, src/*"
 
-"$scripts/run-codex.sh" start T1 --dry-run | grep -q 'codex exec -C .* -s workspace-write' || fail "dry run"
+"$scripts/run-codex.sh" start T1 --dry-run | grep -qE 'codex exec -C [^ ]+ -c sandbox_mode=\\"workspace-write\\" -m fake-model -c model_reasoning_effort=\\"high\\" -o ' || fail "dry run"
 [[ ! -e $tasks/T1/prompt.md ]] || fail "dry run wrote files"
 "$scripts/run-codex.sh" start T1 > "$tmp/start.out"
 grep -q "REPORT STATUS=DONE lines=2" "$tmp/start.out" || fail "report check"
-grep -q "CODEX model=fake-model sandbox=workspace-write tokens=1234" "$tmp/start.out" || fail "codex meta"
+grep -q "CODEX model=fake-model effort=high sandbox=workspace-write tokens=1234" "$tmp/start.out" || fail "codex meta"
 grep -q "# Mode: implement" "$tasks/T1/prompt.md" || fail "mode instructions in prompt"
 expect_fail "$scripts/run-codex.sh" start T1
 ok "run-codex start appends mode instructions and records report shape, sandbox and tokens"
@@ -161,7 +184,7 @@ rm "$tmp/repo-wt/T1/src/skipper.py"
 ok "suppressions fail acceptance; test-skip markers are flagged for review"
 
 printf 'Round finding.\n' > "$tmp/feedback.md"
-"$scripts/run-codex.sh" resume T1 "$tmp/feedback.md" --dry-run | grep -q 'codex exec resume -c sandbox_mode=\\"workspace-write\\"' || fail "resume dry run"
+"$scripts/run-codex.sh" resume T1 "$tmp/feedback.md" --dry-run | grep -q 'codex exec resume -c sandbox_mode=\\"workspace-write\\" -m fake-model -c model_reasoning_effort=\\"high\\" -o ' || fail "resume dry run: same arguments as start"
 "$scripts/run-codex.sh" resume T1 "$tmp/feedback.md" > /dev/null
 [[ -f $tasks/T1/report-r2.md && $(wc -l < "$tmp/repo-wt/T1/feature.txt") -eq 2 ]] || fail "resume round"
 [[ -z $(git -C "$tmp/repo-wt/T1" diff --cached --name-only) ]] || fail "resume should unstage"
@@ -197,6 +220,15 @@ printf 'Named like the archive copy.\n' > "$tasks/T2/feedback-r2.md"
 grep -q "write the complete report" "$tasks/T2/feedback-r3.md" || fail "continue message"
 ok "resume accepts a feedback file already named like its archive copy; continue sends the standard finish message"
 
+grep -v '^CODEX_MODEL=\|^CODEX_EFFORT=' "$CDL_CONF" > "$tmp/nomodel.conf"
+CDL_CONF=$tmp/nomodel.conf "$scripts/new-task.sh" M1 feat/m1 > /dev/null
+task M1 implement
+CDL_CONF=$tmp/nomodel.conf "$scripts/run-codex.sh" start M1 > "$tmp/m1.out"
+grep -q "CODEX model=fake-default effort=medium" "$tmp/m1.out" || fail "default model round"
+FAKE_MODEL=other CDL_CONF=$tmp/nomodel.conf "$scripts/run-codex.sh" resume M1 "$tmp/feedback.md" > "$tmp/m1b.out"
+grep -q "CODEX WARNING: model drift: expected fake-default but the run reports other" "$tmp/m1b.out" || fail "drift against round 1"
+ok "a resumed round reporting another model than round 1 warns of drift"
+
 # --- pipeline, focused gates and quiet tasks ------------------------------------
 cat > "$tasks/focused.txt" <<'GATES'
 changed | case " $CHANGED_FILES " in *" feature.txt "*) ;; *) echo "missing: $CHANGED_FILES"; false ;; esac
@@ -220,7 +252,7 @@ ok "a Quiet task gets the no-test instructions and the pipeline runs no gates"
 # --- investigate mode ----------------------------------------------------------
 "$scripts/new-task.sh" Q1 inv/q1 > /dev/null
 task Q1 investigate
-"$scripts/run-codex.sh" start Q1 --dry-run | grep -q -- '-s read-only' || fail "investigate sandbox"
+"$scripts/run-codex.sh" start Q1 --dry-run | grep -qF 'sandbox_mode=\"read-only\"' || fail "investigate sandbox"
 FAKE_NO_EDIT=1 "$scripts/run-codex.sh" start Q1 > "$tmp/q1.out"
 grep -q "sandbox=read-only" "$tmp/q1.out" || fail "investigate applied sandbox"
 grep -q "# Mode: investigate" "$tasks/Q1/prompt.md" || fail "investigate instructions"
@@ -252,7 +284,7 @@ task O1 operate
 expect_fail "$scripts/run-codex.sh" start O1 --dry-run
 grep -q "operate mode requires an explicit Sandbox" "$tmp/last.out" || fail "operate sandbox must be explicit"
 { echo "# O1: stage"; echo; echo "Mode: operate"; echo "Sandbox: danger-full-access"; echo; echo "Run the stage."; } > "$tasks/O1/task.md"
-"$scripts/run-codex.sh" start O1 --dry-run | grep -q -- '-s danger-full-access' || fail "operate sandbox"
+"$scripts/run-codex.sh" start O1 --dry-run | grep -qF 'sandbox_mode=\"danger-full-access\"' || fail "operate sandbox"
 FAKE_NO_EDIT=1 "$scripts/run-codex.sh" start O1 > /dev/null
 grep -q "# Mode: operate" "$tasks/O1/prompt.md" || fail "operate instructions"
 "$scripts/run-gates.sh" O1 r1 > /dev/null
@@ -311,7 +343,8 @@ expect_fail "$scripts/ledger.sh" full-read T1 "log 4"
 grep -q "BREAKER: full read 4 would exceed MAX_FULL_READS=3" "$tmp/last.out" || fail "full-read breaker"
 "$scripts/ledger.sh" status > "$tmp/status.out"
 grep -qE '^T1 +implement +3 +3702' "$tmp/status.out" || fail "ledger rounds and tokens: $(cat "$tmp/status.out")"
-grep -q "TOTAL tokens=16042 full-reads=3/3" "$tmp/status.out" || fail "ledger totals: $(cat "$tmp/status.out")"
+rounds=$(cat "$tasks"/*/rounds.log | grep -c "^round [0-9]* CODEX .*tokens=1234$")
+grep -q "TOTAL tokens=$((rounds * 1234)) full-reads=3/3" "$tmp/status.out" || fail "ledger totals: $(cat "$tmp/status.out")"
 ok "ledger enforces MAX_FULL_READS and sums rounds and tokens per task"
 
 echo "codex-delegation selftest: $pass checks passed"

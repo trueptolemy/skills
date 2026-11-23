@@ -35,6 +35,8 @@ cdl_load() {
   SETUP_HOOK=${SETUP_HOOK:-}
   MIN_FREE_GB=${MIN_FREE_GB:-3}
   CODEX_SANDBOX=${CODEX_SANDBOX:-workspace-write}
+  CODEX_MODEL=${CODEX_MODEL:-}
+  CODEX_EFFORT=${CODEX_EFFORT:-}
   CODEX_EXTRA_ARGS=${CODEX_EXTRA_ARGS:-}
   SUPPRESSION_PATTERN=${SUPPRESSION_PATTERN:-'noqa|type: ignore|pylint: disable|pragma: no cover|eslint-disable|@ts-ignore|@ts-expect-error|NOLINT|@SuppressWarnings|#\[allow\(|//nolint'}
   SKIP_PATTERN=${SKIP_PATTERN:-'\.skip\(|pytest\.mark\.skip|t\.Skip\(|#\[ignore\]|@Disabled|@Ignore|DISABLED_'}
@@ -146,17 +148,43 @@ report_check() {
   (( lines <= REPORT_MAX_LINES )) || echo "REPORT WARNING: $lines lines exceed $REPORT_MAX_LINES"
 }
 
-# Extract the Codex run header and token count from one log (codex-cli prints
-# `sandbox:`, `model:` and `session id:` lines first and `tokens used` followed
-# by the count last), and warn when the applied sandbox differs from the request.
-codex_meta() {
-  local log=$1 expected=$2 sandbox model tokens
-  sandbox=$(head -n 20 "$log" | sed -n 's/^sandbox:[[:space:]]*\([a-z-]*\).*/\1/p' | head -n 1)
-  model=$(head -n 20 "$log" | sed -n 's/^model:[[:space:]]*//p' | head -n 1)
+# The Codex arguments of every round of a task, start and resume alike, in
+# CODEX_ARGS. A resumed round given fewer arguments falls back to the global
+# Codex configuration, so it silently runs another model, effort or sandbox.
+# Only flags that both `codex exec` and `codex exec resume` accept belong here
+# (doctor.sh checks CODEX_EXTRA_ARGS against both); the start round adds -C,
+# and resume, which has no --cd, runs from the worktree instead.
+codex_args() {  # sandbox
+  local extra=()
+  read -ra extra <<< "$CODEX_EXTRA_ARGS"
+  CODEX_ARGS=(-c "sandbox_mode=\"$1\"")
+  [[ -z $CODEX_MODEL ]] || CODEX_ARGS+=(-m "$CODEX_MODEL")
+  [[ -z $CODEX_EFFORT ]] || CODEX_ARGS+=(-c "model_reasoning_effort=\"$CODEX_EFFORT\"")
+  CODEX_ARGS+=("${extra[@]}")
+}
+
+# Extract the run header and token count from one Codex log. codex-cli prints
+# a header between two `--------` lines (`model:`, `sandbox:`, `reasoning
+# effort:`, `session id:`, ...) and `tokens used` followed by the count last.
+# A line the CLI does not print reads `unknown`. Warn when the applied
+# sandbox, model or effort differs from the expected one; an empty
+# expectation is not checked.
+codex_meta() {  # log, sandbox, [model], [effort]
+  local log=$1 want_sandbox=$2 want_model=${3:-} want_effort=${4:-} header sandbox model effort tokens
+  header=$(head -n 40 "$log" | awk '/^--------$/ { if (++n == 2) exit } { print }')
+  sandbox=$(sed -n 's/^sandbox:[[:space:]]*\([a-z-]*\).*/\1/p' <<< "$header" | head -n 1)
+  model=$(sed -n 's/^model:[[:space:]]*//p' <<< "$header" | head -n 1)
+  effort=$(sed -n 's/^reasoning effort:[[:space:]]*//p' <<< "$header" | head -n 1)
   tokens=$(grep -A1 '^tokens used' "$log" | tail -n 1 | tr -dc '0-9' || true)
-  echo "CODEX model=${model:-unknown} sandbox=${sandbox:-unknown} tokens=${tokens:-unknown}"
-  if [[ -n $sandbox && $sandbox != "$expected" ]]; then
-    echo "CODEX WARNING: requested sandbox $expected but the run reports $sandbox"
+  echo "CODEX model=${model:-unknown} effort=${effort:-unknown} sandbox=${sandbox:-unknown} tokens=${tokens:-unknown}"
+  if [[ -n $sandbox && $sandbox != "$want_sandbox" ]]; then
+    echo "CODEX WARNING: requested sandbox $want_sandbox but the run reports $sandbox"
+  fi
+  if [[ -n $want_model && -n $model && $model != "$want_model" ]]; then
+    echo "CODEX WARNING: model drift: expected $want_model but the run reports $model"
+  fi
+  if [[ -n $want_effort && -n $effort && $effort != "$want_effort" ]]; then
+    echo "CODEX WARNING: effort drift: expected $want_effort but the run reports $effort"
   fi
 }
 

@@ -17,9 +17,8 @@
 # start  writes report.md and codex.log.
 # resume continues the recorded session with a feedback file and writes
 #        report-rN.md and codex-rN.log. It refuses beyond MAX_ROUNDS (the
-#        per-task circuit breaker). `codex exec resume` has no --sandbox or --cd
-#        flag, so the sandbox is passed with -c and the command runs from the
-#        worktree. The index is unstaged first because the gate runner stages it.
+#        per-task circuit breaker). The index is unstaged first because the
+#        gate runner stages it.
 # continue resumes with a standard "finish the work and write the report"
 #        message. Use it when a round stopped early: its report has no STATUS
 #        line, or it is a progress note. If the log tail shows an API error,
@@ -27,10 +26,16 @@
 #        may be left) and run `codex app-server daemon restart`.
 # A feedback file may already be named feedback-rN.md inside the task
 # directory; it is not copied onto itself.
+# Every round passes the same arguments (codex_args in lib.sh): the sandbox as
+# -c sandbox_mode, CODEX_MODEL, CODEX_EFFORT and CODEX_EXTRA_ARGS. Only start
+# adds -C; `codex exec resume` has no --cd, so a resumed round runs from the
+# worktree.
 # --dry-run prints the Codex command and writes nothing.
 # On completion it prints `REPORT STATUS=<status> lines=<n>` and
-# `CODEX model=... sandbox=... tokens=...`, with warnings for a malformed report
-# or a sandbox other than the one requested. Read those lines first.
+# `CODEX model=... effort=... sandbox=... tokens=...`, with warnings for a
+# malformed report, a sandbox other than the one requested, or model or effort
+# drift: a value other than CODEX_MODEL / CODEX_EFFORT, or, when those are
+# unset, other than round 1's. Read those lines first.
 
 source "$(dirname "$0")/lib.sh"
 cdl_load
@@ -44,24 +49,37 @@ task_paths "$tid"
 command -v codex >/dev/null || die "codex CLI not found on PATH"
 task_header
 sandbox=$(task_sandbox)
+codex_args "$sandbox"
 instructions=$(mode_file "$TASK_MODE")
 [[ -s $instructions ]] || die "mode instructions $instructions are missing"
 dry=0
 [[ ${*: -1} == --dry-run ]] && dry=1
 stamp() { date -u +%FT%TZ; }
 show() { printf 'DRY-RUN:'; printf ' %q' "$@"; echo; }
+# Model and effort every round must report: the configured values, otherwise
+# what round 1 recorded, so a resumed round cannot drift unnoticed.
+expected() {  # field (model|effort), configured value
+  local value=$2
+  if [[ -z $value && -f $TD/rounds.log ]]; then
+    value=$(grep -m1 '^round 1 CODEX ' "$TD/rounds.log" | sed -n "s/.* $1=\([^ ]*\).*/\1/p")
+    [[ $value != unknown ]] || value=""
+  fi
+  echo "$value"
+}
 finish_round() {  # round, report, log
+  local model effort
+  model=$(expected model "$CODEX_MODEL"); effort=$(expected effort "$CODEX_EFFORT")
   echo "round $1 exit rc=$rc $(stamp)" >> "$TD/rounds.log"
   echo "codex rc=$rc mode=$TASK_MODE"
-  { report_check "$2" || true; codex_meta "$3" "$sandbox"; } | sed "s/^/round $1 /" | tee -a "$TD/rounds.log"
+  { report_check "$2" || true; codex_meta "$3" "$sandbox" "$model" "$effort"; } |
+    sed "s/^/round $1 /" | tee -a "$TD/rounds.log"
 }
 
 if [[ $mode == start ]]; then
   [[ -s $TD/task.md ]] || die "$TD/task.md is empty"
   [[ -s $TASKS_ROOT/common.md ]] || die "$TASKS_ROOT/common.md is missing"
   [[ ! -e $TD/report.md ]] || die "$TD/report.md exists; use resume, or move it away to restart"
-  # shellcheck disable=SC2206
-  cmd=(codex exec -C "$WT" -s "$sandbox" $CODEX_EXTRA_ARGS -o "$TD/report.md" -)
+  cmd=(codex exec -C "$WT" "${CODEX_ARGS[@]}" -o "$TD/report.md" -)
   if (( dry )); then
     show "${cmd[@]}"; echo "stdin: task.md + common.md + $instructions"; exit 0
   fi
@@ -102,7 +120,7 @@ if (( n > MAX_ROUNDS )); then
   echo "Stop this task without committing, keep its worktree and report its state." >&2
   exit 3
 fi
-cmd=(codex exec resume -c "sandbox_mode=\"$sandbox\"" -o "$TD/report-r$n.md" "$sid" -)
+cmd=(codex exec resume "${CODEX_ARGS[@]}" -o "$TD/report-r$n.md" "$sid" -)
 if (( dry )); then show "${cmd[@]}"; echo "cwd: $WT; stdin: $feedback; round $n"; exit 0; fi
 target=$TD/feedback-r$n.md
 if [[ $(realpath -m "$feedback") != "$(realpath -m "$target")" ]]; then

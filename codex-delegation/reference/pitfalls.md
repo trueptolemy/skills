@@ -213,6 +213,18 @@ branches and combined integration gates.
   worktree, and take the session id from the first round log's `session id:`
   line.
 
+**A resumed round runs another model.**
+- Trap: the first round passed `CODEX_EXTRA_ARGS` (a model and a reasoning
+  effort) but resume did not, so every later round ran the global default
+  model and effort. Nothing failed, and the smoke call, which also ignored
+  `CODEX_EXTRA_ARGS`, had verified a model no task used.
+- Fix: every round and the smoke call build their arguments from one list
+  (`codex_args`); set the model and effort with `CODEX_MODEL` and
+  `CODEX_EFFORT`. `run-codex.sh` compares each round's `model:` and
+  `reasoning effort:` header lines with them (or with round 1) and warns of
+  drift. Extra flags must be ones `codex exec resume` accepts too; `doctor.sh`
+  checks them.
+
 **Codex cannot commit.**
 - The workspace-write sandbox cannot write the shared `.git`. That is good: the
   planner commits.

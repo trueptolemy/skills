@@ -6,9 +6,11 @@
 # the exec/resume flags the scripts depend on, and, when a configuration is
 # found (CDL_CONF or ./codex-delegation.conf), the repository, gates, common
 # rules, setup hook and free disk space.
-# --smoke additionally runs one tiny paid Codex call and verifies the log shape
-# the scripts parse (`session id:`, `sandbox:`, `tokens used`). Ask the user
-# before using it.
+# --smoke additionally runs one tiny paid Codex call with the arguments every
+# task round uses (CODEX_MODEL, CODEX_EFFORT, CODEX_EXTRA_ARGS; read-only
+# sandbox) and verifies the log shape the scripts parse (`session id:`,
+# `sandbox:`, `model:`, `tokens used`), so it proves the model ID the tasks will
+# really run. Ask the user before using it.
 
 source "$(dirname "$0")/lib.sh"
 smoke=0
@@ -33,14 +35,14 @@ if command -v codex >/dev/null; then
     warn "codex ${version:-unknown} is not in the verified list ($VERIFIED_CODEX_VERSIONS); run with --smoke once"
   fi
   help=$(codex exec --help 2>&1 || true)
-  for flag in --cd --sandbox --output-last-message; do
+  for flag in --cd --config --model --output-last-message; do
     grep -q -- "$flag" <<< "$help" && pass "codex exec supports $flag" || fail "codex exec lacks $flag"
   done
   for value in read-only workspace-write; do
     grep -q -- "$value" <<< "$help" && pass "codex sandbox mode $value exists" || fail "codex sandbox mode $value is missing"
   done
   rhelp=$(codex exec resume --help 2>&1 || true)
-  for flag in --config --output-last-message; do
+  for flag in --config --model --output-last-message; do
     grep -q -- "$flag" <<< "$rhelp" && pass "codex exec resume supports $flag" || fail "codex exec resume lacks $flag"
   done
   if grep -q -- "--sandbox" <<< "$rhelp"; then
@@ -77,6 +79,20 @@ project_checks() {
   else
     echo "FAIL  $TASKS_ROOT/common.md is missing"
   fi
+  # Every round passes the same arguments, so each extra flag must be one
+  # that both `codex exec` and `codex exec resume` accept.
+  local extra=() flag
+  read -ra extra <<< "$CODEX_EXTRA_ARGS"
+  for flag in "${extra[@]}"; do
+    [[ $flag == -* && -n ${help:-} ]] || continue
+    flag=${flag%%=*}
+    grep -qE -- "(^|[[:space:],])$flag([[:space:],=]|$)" <<< "$help" ||
+      echo "FAIL  CODEX_EXTRA_ARGS flag $flag is not accepted by codex exec"
+    grep -qE -- "(^|[[:space:],])$flag([[:space:],=]|$)" <<< "$rhelp" ||
+      echo "FAIL  CODEX_EXTRA_ARGS flag $flag is not accepted by codex exec resume; resumed rounds use the same arguments and would fail"
+  done
+  codex_args "$CODEX_SANDBOX"
+  echo "PASS  every round passes:$(printf ' %q' "${CODEX_ARGS[@]}")"
   if [[ -n $SETUP_HOOK && ! -x $SETUP_HOOK ]]; then
     echo "FAIL  setup hook $SETUP_HOOK is not executable"
   fi
@@ -97,16 +113,38 @@ else
 fi
 
 if (( smoke )) && command -v codex >/dev/null; then
+  # The same arguments as every task round, with a read-only sandbox.
+  : "${CODEX_MODEL:=}" "${CODEX_EFFORT:=}" "${CODEX_EXTRA_ARGS:=}"
+  if [[ -f $conf ]] && (cdl_load) > /dev/null 2>&1; then cdl_load; fi
+  codex_args read-only
   dir=$(mktemp -d); trap 'rm -rf "$dir"' EXIT
-  echo "smoke one paid Codex call (read-only, ephemeral)..."
-  if (cd "$dir" && codex exec -s read-only --skip-git-repo-check --ephemeral \
-        -o "$dir/last.txt" "Reply with exactly the word OK and nothing else." > "$dir/log.txt" 2>&1); then
+  echo "smoke one paid Codex call (read-only, ephemeral) with:$(printf ' %q' "${CODEX_ARGS[@]}")"
+  if (cd "$dir" && codex exec --skip-git-repo-check --ephemeral "${CODEX_ARGS[@]}" \
+        -o "$dir/last.txt" "Reply with exactly the word OK and nothing else." < /dev/null > "$dir/log.txt" 2>&1); then
+    meta=$(codex_meta "$dir/log.txt" read-only "$CODEX_MODEL" "$CODEX_EFFORT")
+    echo "smoke $(head -n 1 <<< "$meta")"
     grep -q '^session id:' "$dir/log.txt" && pass "log has a 'session id:' line" || fail "log lacks 'session id:'"
     grep -q '^sandbox: read-only' "$dir/log.txt" && pass "log reports the requested read-only sandbox" || fail "log does not report sandbox: read-only"
+    if [[ $meta == *"model=unknown "* ]]; then
+      warn "log has no 'model:' line; model drift cannot be detected"
+    elif [[ $meta == *"model drift"* ]]; then
+      fail "the run reports another model than CODEX_MODEL=$CODEX_MODEL"
+    else
+      pass "log reports the model${CODEX_MODEL:+ CODEX_MODEL=$CODEX_MODEL}"
+    fi
+    if [[ -n $CODEX_EFFORT ]]; then
+      if [[ $meta == *"effort=unknown "* ]]; then
+        warn "log has no 'reasoning effort:' line; effort drift cannot be detected"
+      elif [[ $meta == *"effort drift"* ]]; then
+        fail "the run reports another effort than CODEX_EFFORT=$CODEX_EFFORT"
+      else
+        pass "log reports CODEX_EFFORT=$CODEX_EFFORT"
+      fi
+    fi
     grep -q '^tokens used' "$dir/log.txt" && pass "log has a 'tokens used' line" || warn "log lacks 'tokens used'; cost accounting will show unknown"
     grep -qx 'OK' "$dir/last.txt" && pass "-o captured the final message" || fail "-o did not capture the final message"
   else
-    fail "smoke call failed; check authentication for the configured provider"
+    fail "smoke call failed; check authentication for the configured provider and the arguments above"
   fi
 fi
 
