@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the Claude Code skills in this repository.
+# Install the Claude Code skills in this repository (every directory with a SKILL.md).
 #
 # Usage:
 #   ./install.sh                     install for the current user (~/.claude/skills)
@@ -77,18 +77,26 @@ for dir in "${skills[@]}"; do
     act ln -s "$dir" "$target"
   else
     act cp -R "$dir" "$target"
-    act find "$target" -name '*.sh' -exec chmod +x {} +
+    act rm -rf "$target/tests"          # tests stay in the repository
+    act find "$target" -path '*/scripts/*' \( -name '*.sh' -o -name '*.py' \) -exec chmod +x {} +
   fi
   (( dry )) || echo "installed $name -> $target$( (( link )) && echo ' (symlink)')"
 done
 
 (( uninstall )) && exit 0
 echo
-command -v git >/dev/null && echo "git:   $(git --version)" || echo "git:   NOT FOUND (required)"
-if command -v codex >/dev/null; then
-  echo "codex: $(codex --version 2>/dev/null | head -n 1)"
-else
-  echo "codex: NOT FOUND - install the OpenAI Codex CLI before delegating tasks"
-fi
-echo "Start a new Claude Code session to load the skill; invoke it with /codex-delegation"
-echo "or ask Claude to delegate work to Codex. Per-project setup: see README.md."
+names=()
+for dir in "${skills[@]}"; do
+  name=$(basename "$dir"); names+=("/$name")
+  case $name in
+    codex-delegation)
+      command -v git >/dev/null && echo "git:     $(git --version)" || echo "git:     NOT FOUND (required by codex-delegation)"
+      if command -v codex >/dev/null; then
+        echo "codex:   $(codex --version 2>/dev/null | head -n 1)"
+      else
+        echo "codex:   NOT FOUND - install the OpenAI Codex CLI before delegating tasks"
+      fi ;;
+  esac
+done
+echo "Start a new Claude Code session to load the skills; invoke them with ${names[*]}"
+echo "or describe the task. Per-skill setup and usage: <skill>/README.md."
