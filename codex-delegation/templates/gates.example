@@ -1,6 +1,8 @@
 # Gate list for run-gates.sh: `name | shell command`, run inside the worktree.
-# WT is exported and GATE_ENV is applied. Put the harness check first: a gate
-# run that tests another checkout is worse than no gate run.
+# WT is exported, TMPDIR and PYTEST_DEBUG_TEMPROOT point to the worktree's own
+# .tmp/, and GATE_ENV is applied. Do not hard-code /tmp in a gate (for example
+# pytest --basetemp=/tmp/...): parallel runs would share it. Put the harness
+# check first: a gate run that tests another checkout is worse than no gate run.
 
 # --- Generic Python project with an editable install -----------------------
 import-path   | python -c 'import mypkg, os, sys; p = os.path.realpath(mypkg.__file__); sys.exit(0 if p.startswith(os.environ["WT"] + "/") else "imported outside worktree: " + p)'

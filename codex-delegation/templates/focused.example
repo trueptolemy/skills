@@ -1,6 +1,7 @@
 # Focused gate list for run-gates.sh --focused: intermediate rounds and trial
 # versions. Same format as gates.txt. CHANGED_FILES holds the paths changed
-# against the merge base. The full gate list still runs once before delivery.
+# against the merge base; TMPDIR and PYTEST_DEBUG_TEMPROOT point to the
+# worktree's own .tmp/. The full gate list still runs once before delivery.
 
 # --- Python: changed tests, tests importing changed modules, static checks ----
 import-path | python -c 'import mypkg, os, sys; p = os.path.realpath(mypkg.__file__); sys.exit(0 if p.startswith(os.environ["WT"] + "/") else p)'

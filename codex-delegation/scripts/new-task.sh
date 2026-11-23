@@ -4,8 +4,11 @@
 #
 # The worktree starts from the latest base branch unless --from names another
 # ref (for example the previous task's branch in a chained delivery). The
-# command refuses when free disk space is below MIN_FREE_GB: every worktree is a
-# full checkout, and a full disk once broke a checkout halfway. It also refuses
+# command refuses when free disk space under WT_ROOT is below MIN_FREE_GB, or
+# free inodes under WT_ROOT, TMPDIR or /tmp are below MIN_FREE_INODES: every
+# worktree is a full checkout, a full disk once broke a checkout halfway, and a
+# small /tmp once ran out of inodes during the gates. It creates the worktree's
+# temporary directory .tmp/ (task_tmp in lib.sh). It also refuses
 # an existing task directory that already holds rounds or reports: reusing an
 # old identifier once made run-codex.sh return the previous task's report
 # instead of starting Codex. Pass --reuse-task only to continue that task.
@@ -33,9 +36,7 @@ if (( ! reuse_task )) && { [[ -e $TD/rounds.log ]] || compgen -G "$TD/report*.md
 fi
 mkdir -p "$WT_ROOT" "$TASKS_ROOT"
 planner_begin   # record the new branch and worktree for the guard of running rounds
-free=$(free_gb "$WT_ROOT")
-need=${MIN_FREE_GB}
-(( free >= need )) || die "only ${free} GiB free under $WT_ROOT (need $need); remove merged worktrees first"
+storage=$(storage_check) || die "not enough room for a new task; remove merged worktrees or free the filesystem:"$'\n'"$(grep '^FAIL' <<< "$storage")"
 
 if git -C "$REPO" show-ref --verify --quiet "refs/heads/$branch"; then
   (( reuse )) || die "branch $branch exists; pass --reuse-branch to check it out"
@@ -48,6 +49,7 @@ if [[ -n $SETUP_HOOK ]]; then
   [[ -x $SETUP_HOOK ]] || die "SETUP_HOOK $SETUP_HOOK is not executable"
   "$SETUP_HOOK" "$WT"
 fi
+task_tmp
 dirty=$(git -C "$WT" status --porcelain | wc -l)
 (( dirty == 0 )) || die "fresh worktree $WT is not clean after setup ($dirty entries); exclude setup artifacts in .git/info/exclude"
 

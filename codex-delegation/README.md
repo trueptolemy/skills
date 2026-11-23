@@ -26,7 +26,8 @@ tests/
 scripts/
   doctor.sh              check git, Codex CLI version and flags, and the project setup (no model call);
                          --smoke makes one paid call with the round arguments
-  new-task.sh            worktree, branch and task directory (disk check, setup hook, clean check)
+  new-task.sh            worktree, branch and task directory (space and inode checks, setup hook,
+                         per-worktree .tmp/, clean check)
   run-codex.sh           start, resume or continue Codex in the background with the same
                          arguments every round; mode sandbox, round breaker, report shape,
                          applied sandbox, model and effort drift, token count, and a

@@ -241,8 +241,10 @@ start Codex only after they confirm it.
 ## Phase 3: one task loop
 
 1. `scripts/new-task.sh <id> <branch> [--from <ref>]`. It refuses on low disk
-   space, refuses a task directory that already holds an earlier task, runs
-   the setup hook and checks that the worktree is clean. Pick an unused id.
+   space or inodes (worktree root, `TMPDIR`, `/tmp`), refuses a task directory
+   that already holds an earlier task, runs the setup hook, creates the
+   worktree's temporary directory `.tmp/` and checks that the worktree is
+   clean. Pick an unused id.
 2. Write `<tasks>/<id>/task.md` from `templates/task.md`, starting with its
    Mode and Allowed paths header. Append names,
    constants and limits from earlier reports under "Notes from earlier tasks",
@@ -411,9 +413,11 @@ real-system operation through Codex with `Mode: operate` and an explicit
   checkout, and nine of them once filled the disk.
 - Make gates import the worktree's code (`GATE_ENV`) and link untracked
   dependencies with `SETUP_HOOK`.
-- Delete scratch directories that Codex's real-data checks leave under `/tmp`
-  once the round is accepted, and stale test temporary directories only while
-  no gate runs.
+- Codex and every gate get `TMPDIR` and `PYTEST_DEBUG_TEMPROOT` pointing to
+  the worktree's own `.tmp/` (ignored through the shared `info/exclude`), so
+  parallel runs neither fill a shared `/tmp` nor remove each other's
+  directories, and the files go with the worktree. Delete scratch directories
+  left elsewhere (for example by real-data checks) once the round is accepted.
 
 ## Final summary
 

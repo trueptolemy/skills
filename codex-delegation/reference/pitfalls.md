@@ -111,6 +111,19 @@ branches and combined integration gates.
 - Fix: remove each worktree once its task is merged and clean. `new-task.sh`
   refuses below `MIN_FREE_GB`.
 
+**Temporary files fill a small `/tmp`.**
+- Trap: on a host whose `/tmp` was a tmpfs with a limited number of inodes,
+  the temporary files of gate runs and of Codex's checks used up its inodes
+  while the disk still had space. Gate runs in parallel shared `/tmp` and also
+  removed each other's temporary directories.
+- Root cause: the space check looked only at the worktree root, and every run
+  used the system temporary directory.
+- Fix: Codex and every gate get `TMPDIR` and `PYTEST_DEBUG_TEMPROOT` set to the
+  worktree's own `.tmp/`, which the shared `info/exclude` ignores and which is
+  removed with the worktree. `new-task.sh` and `doctor.sh` check free space
+  and inodes of the worktree root, of `TMPDIR` and of `/tmp`; `df` reports no
+  inode count on some filesystems, and the check then says so.
+
 **The baseline is not green.**
 - Trap: in a clean checkout one test read an untracked operator configuration
   file and failed; the main checkout had the file, so it had always passed.

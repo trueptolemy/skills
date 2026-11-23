@@ -5,7 +5,8 @@
 # Without --smoke no model is called: it checks git, the Codex CLI version and
 # the exec/resume flags the scripts depend on, and, when a configuration is
 # found (CDL_CONF or ./codex-delegation.conf), the repository, gates, common
-# rules, setup hook and free disk space.
+# rules, setup hook, and free space and inodes where tasks write (the worktree
+# root, TMPDIR and /tmp).
 # --smoke additionally runs one tiny paid Codex call with the arguments every
 # task round uses (CODEX_MODEL, CODEX_EFFORT, CODEX_EXTRA_ARGS; read-only
 # sandbox) and verifies the log shape the scripts parse (`session id:`,
@@ -20,7 +21,11 @@ pass() { echo "PASS  $*"; }
 warn() { echo "WARN  $*"; warns=$((warns + 1)); }
 fail() { echo "FAIL  $*"; fails=$((fails + 1)); }
 
-echo "bash  $BASH_VERSION (verified: 5.2)"
+if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4) )); then
+  pass "bash $BASH_VERSION (verified: 5.2)"
+else
+  fail "bash $BASH_VERSION is older than 4.4, which the scripts need"
+fi
 if command -v git >/dev/null; then
   pass "$(git --version)"
 else
@@ -97,12 +102,7 @@ project_checks() {
   if [[ -n $SETUP_HOOK && ! -x $SETUP_HOOK ]]; then
     echo "FAIL  setup hook $SETUP_HOOK is not executable"
   fi
-  local free; free=$(free_gb "$WT_ROOT")
-  if (( free >= MIN_FREE_GB )); then
-    echo "PASS  ${free} GiB free under $WT_ROOT"
-  else
-    echo "FAIL  only ${free} GiB free under $WT_ROOT (MIN_FREE_GB=$MIN_FREE_GB)"
-  fi
+  storage_check || true
 }
 if [[ -f $conf ]]; then
   report=$( (project_checks) 2>&1 || true)

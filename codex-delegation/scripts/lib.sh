@@ -35,6 +35,7 @@ cdl_load() {
   FOCUSED_GATES_FILE=${FOCUSED_GATES_FILE:-$TASKS_ROOT/focused.txt}
   SETUP_HOOK=${SETUP_HOOK:-}
   MIN_FREE_GB=${MIN_FREE_GB:-3}
+  MIN_FREE_INODES=${MIN_FREE_INODES:-100000}
   CODEX_SANDBOX=${CODEX_SANDBOX:-workspace-write}
   ALLOW_FULL_ACCESS=${ALLOW_FULL_ACCESS:-no}
   case $ALLOW_FULL_ACCESS in yes|no) ;; *) die "ALLOW_FULL_ACCESS must be yes or no (got $ALLOW_FULL_ACCESS)" ;; esac
@@ -145,6 +146,59 @@ free_gb() {
   df -Pk "$path" | awk 'NR == 2 { printf "%d", $4 / 1048576 }'
 }
 
+# Free inodes of the filesystem that holds a path or its parent, or "unknown"
+# when df reports none (some filesystems allocate inodes on demand). `df -i`
+# output differs between systems, so the column is found by its header.
+free_inodes() {
+  local path=$1
+  while [[ ! -e $path ]]; do path=$(dirname "$path"); done
+  { df -Pi "$path" 2>/dev/null || df -i "$path" 2>/dev/null || true; } | awk '
+    NR == 1 { for (i = 1; i <= NF; i++) { h = tolower($i); if (h == "ifree") f = i; if (h == "iused") u = i }; next }
+    NR == 2 && f && $f ~ /^[0-9]+$/ && $f + (u ? $u : 0) > 0 { print $f; found = 1 }
+    END { if (!found) print "unknown" }'
+}
+
+# Check the filesystems tasks write to, one PASS or FAIL line each, and return
+# 1 on any failure: the worktree root holds every checkout and, through
+# TMPDIR=$WT/.tmp, the temporary files of Codex and the gates (MIN_FREE_GB
+# and MIN_FREE_INODES); the caller's TMPDIR and /tmp, which some tools use
+# whatever TMPDIR says, need MIN_FREE_INODES. A small /tmp can run out of
+# inodes long before the disk runs out of space.
+storage_check() {
+  local rc=0 path mount seen=" " free inodes first=1
+  for path in "$WT_ROOT" "${TMPDIR:-/tmp}" /tmp; do
+    while [[ ! -e $path ]]; do path=$(dirname "$path"); done
+    mount=$(df -P "$path" | awk 'NR == 2 { print $NF }')
+    if [[ $seen == *" $mount "* ]]; then first=0; continue; fi
+    seen+="$mount "
+    if (( first )); then
+      free=$(free_gb "$path")
+      if (( free >= MIN_FREE_GB )); then echo "PASS  ${free} GiB free under $path"
+      else echo "FAIL  only ${free} GiB free under $path (MIN_FREE_GB=$MIN_FREE_GB)"; rc=1; fi
+      first=0
+    fi
+    inodes=$(free_inodes "$path")
+    if [[ $inodes == unknown ]]; then echo "PASS  free inodes under $path: not reported by df"
+    elif (( inodes >= MIN_FREE_INODES )); then echo "PASS  $inodes inodes free under $path"
+    else echo "FAIL  only $inodes inodes free under $path (MIN_FREE_INODES=$MIN_FREE_INODES)"; rc=1; fi
+  done
+  return "$rc"
+}
+
+# The repository's common git directory, shared by all its worktrees.
+git_common_dir() { (cd "$REPO" && cd "$(git rev-parse --git-common-dir)" && pwd); }
+
+# Create the task's temporary directory, $WT/.tmp, which Codex and the gates
+# get as TMPDIR and PYTEST_DEBUG_TEMPROOT. Every worktree has its own, so
+# parallel runs cannot fill or clean each other's, and it goes with the
+# worktree. /.tmp/ is ignored through the info/exclude all worktrees share.
+task_tmp() {
+  local exclude
+  exclude=$(git_common_dir)/info/exclude
+  grep -qxF '/.tmp/' "$exclude" 2>/dev/null || { mkdir -p "${exclude%/*}"; echo '/.tmp/' >> "$exclude"; }
+  mkdir -p "$WT/.tmp"
+}
+
 # Check a report's protocol shape so the planner can read the STATUS line
 # first and notice drift without opening a malformed report in full.
 report_check() {
@@ -178,14 +232,16 @@ codex_args() {  # sandbox
   CODEX_ARGS+=("${extra[@]}")
 }
 
-# The environment prefix of every Codex round, in CODEX_ENV. Outside operate
-# tasks Codex gets no ssh agent and git refuses ssh transport, so a round
+# The environment prefix of every Codex round, in CODEX_ENV: the task's own
+# temporary directory (task_tmp), and outside operate tasks no ssh agent and
+# a git that refuses ssh transport, so a round
 # cannot reach a real system or push through keys the agent holds. This does
 # not stop ssh with a key file it reads directly; common.md forbids that.
-codex_env() {
+codex_env() {  # env options (-u) must precede its assignments
   CODEX_ENV=(env)
   [[ $TASK_MODE == operate ]] ||
     CODEX_ENV+=(-u SSH_AUTH_SOCK 'GIT_SSH_COMMAND=echo "codex-delegation: ssh is disabled outside operate tasks" >&2; false')
+  CODEX_ENV+=("TMPDIR=$WT/.tmp" "PYTEST_DEBUG_TEMPROOT=$WT/.tmp")
 }
 
 # Extract the run header and token count from one Codex log. codex-cli prints
@@ -251,7 +307,7 @@ task_activity() {  # task directory
 
 guard_snapshot() {  # output file
   local common wt_root path branch real kind first=1 f
-  common=$(cd "$REPO" && cd "$(git rev-parse --git-common-dir)" && pwd)
+  common=$(git_common_dir)
   wt_root=$(cd "$WT_ROOT" 2>/dev/null && pwd -P || echo "$WT_ROOT")
     {
     printf '#planner\t%s\n' "$( [[ -f $GUARD_PLANNER ]] && wc -l < "$GUARD_PLANNER" | tr -d ' ' || echo 0)"

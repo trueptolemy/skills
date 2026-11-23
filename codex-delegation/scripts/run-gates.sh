@@ -29,8 +29,11 @@
 # BASE_BRANCH), including staged new files.
 # Gate lines are `name | shell command`; lines starting with '#' are
 # comments. Each command reads /dev/null, so it cannot consume the list. Commands
-# run in the worktree with WT exported and GATE_ENV applied, for example
-# GATE_ENV='PYTHONPATH=$WT/src' when an editable install points elsewhere.
+# run in the worktree with WT exported, TMPDIR and PYTEST_DEBUG_TEMPROOT set to
+# the worktree's own .tmp/ (parallel runs then neither fill a shared /tmp nor
+# clean each other's directories), and GATE_ENV applied after them, for
+# example GATE_ENV='PYTHONPATH=$WT/src' when an editable install points
+# elsewhere.
 # Put a harness check first, such as asserting the imported package path is
 # inside $WT. The worktree is staged with `git add -A` so path checks see new
 # files; review the change afterwards with `git diff --cached`, and only once the
@@ -65,6 +68,8 @@ trap 'echo "RESULT FAIL (runner interrupted)" >> "$summary"; echo DONE >> "$summ
 note() { echo "$*" >> "$summary"; }
 
 export WT
+task_tmp
+export TMPDIR=$WT/.tmp PYTEST_DEBUG_TEMPROOT=$WT/.tmp
 if [[ -n $GATE_ENV ]]; then eval "export $GATE_ENV"; fi
 cd "$WT"
 git add -A

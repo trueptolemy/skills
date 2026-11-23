@@ -95,6 +95,7 @@ TASKS_ROOT=$tasks
 GATES_FILE=$tasks/gates.txt
 PRESET=python
 MIN_FREE_GB=0
+MIN_FREE_INODES=0
 CODEX_MODEL=fake-model
 CODEX_EFFORT=high
 GATE_ENV='MARKER=\$WT/marker'
@@ -104,7 +105,7 @@ EOF
 export CDL_CONF=$tasks/codex-delegation.conf
 cat > "$tasks/gates.txt" <<'EOF'
 # harness check: gates run inside the task worktree with GATE_ENV applied
-harness | test "$PWD" = "$WT" && test "$MARKER" = "$WT/marker"
+harness | test "$PWD" = "$WT" && test "$MARKER" = "$WT/marker" && test "$TMPDIR" = "$WT/.tmp" && test "$PYTEST_DEBUG_TEMPROOT" = "$WT/.tmp" && test -d "$TMPDIR"
 readme  | grep -q hello README.md
 EOF
 printf 'feat: x\n\nCo-Authored-By: Fake <f@example.com>\n' > "$tmp/msg.txt"
@@ -145,8 +146,22 @@ ok "doctor refuses extra flags resume lacks; smoke runs with the round arguments
 # --- implement mode, rounds, breakers ------------------------------------------
 "$scripts/new-task.sh" T1 feat/t1 > /dev/null
 [[ -d $tmp/repo-wt/T1 && -f $tasks/T1/task.md && -f $tasks/common.md ]] || fail "new-task layout"
+[[ -d $tmp/repo-wt/T1/.tmp ]] && grep -qxF '/.tmp/' "$repo/.git/info/exclude" || fail "per-worktree temporary directory"
 expect_fail "$scripts/new-task.sh" T1 feat/t1
-ok "new-task creates worktree, branch and task files and refuses a duplicate"
+ok "new-task creates worktree, branch, task files and an ignored .tmp/ and refuses a duplicate"
+
+inodes=$(bash -c "source '$scripts/lib.sh'; free_inodes '$tmp'")
+[[ $inodes == unknown || $inodes =~ ^[0-9]+$ ]] || fail "free_inodes: $inodes"
+{ cat "$CDL_CONF"; echo "MIN_FREE_GB=999999999"; } > "$tmp/space.conf"
+expect_fail env CDL_CONF="$tmp/space.conf" "$scripts/new-task.sh" S1 s/s1
+grep -q "FAIL  only .* GiB free under .*MIN_FREE_GB=999999999" "$tmp/last.out" || fail "space refusal: $(cat "$tmp/last.out")"
+if [[ $inodes != unknown ]]; then
+  { cat "$CDL_CONF"; echo "MIN_FREE_INODES=$((inodes * 1000 + 1000))"; } > "$tmp/inodes.conf"
+  expect_fail env CDL_CONF="$tmp/inodes.conf" "$scripts/new-task.sh" S1 s/s1
+  grep -q "FAIL  only .* inodes free under" "$tmp/last.out" || fail "inode refusal: $(cat "$tmp/last.out")"
+fi
+[[ ! -d $tmp/repo-wt/S1 ]] || fail "a refused new-task must not create the worktree"
+ok "new-task refuses low space or inodes where tasks write (inodes: $inodes)"
 task T1 implement "feature.txt, src/*"
 
 "$scripts/run-codex.sh" start T1 --dry-run | grep -qE 'codex exec -C [^ ]+ -c sandbox_mode=\\"workspace-write\\" -c approval_policy=\\"never\\" -m fake-model -c model_reasoning_effort=\\"high\\" -o ' || fail "dry run"
@@ -353,12 +368,15 @@ SSH_AUTH_SOCK=/fake/agent FAKE_DURING="echo \"\${SSH_AUTH_SOCK-none}|\$(git ls-r
   CDL_CONF=$tmp/full.conf "$scripts/run-codex.sh" start F1 > "$tmp/f1.out" || fail "full-access round: $(cat "$tmp/f1.out")"
 grep -q "sandbox=danger-full-access" "$tmp/f1.out" && grep -q "GUARD PASS" "$tmp/f1.out" && ! grep -q WARNING "$tmp/f1.out" || fail "full-access round output: $(cat "$tmp/f1.out")"
 grep -q '^none|codex-delegation: ssh is disabled outside operate tasks' "$tmp/f1.env" || fail "ssh shield: $(cat "$tmp/f1.env")"
-FAKE_APPROVAL=on-request CDL_CONF=$tmp/full.conf "$scripts/run-codex.sh" continue F1 > "$tmp/f1b.out"
+FAKE_DURING="echo \"\$TMPDIR|\$PYTEST_DEBUG_TEMPROOT\" > '$tmp/f1.tmp'" CDL_CONF=$tmp/full.conf "$scripts/run-codex.sh" continue F1 > /dev/null
+[[ $(cat "$tmp/f1.tmp") == "$tmp/repo-wt/F1/.tmp|$tmp/repo-wt/F1/.tmp" ]] || fail "Codex temporary directory: $(cat "$tmp/f1.tmp")"
+FAKE_APPROVAL=on-request CDL_CONF=$tmp/full.conf "$scripts/run-codex.sh" resume F1 "$tmp/feedback.md" > "$tmp/f1b.out" || true
 grep -q "requested approval policy never but the run reports on-request" "$tmp/f1b.out" || fail "approval warning"
 "$scripts/new-task.sh" O2 op/o2 > /dev/null
 { echo "# O2: stage"; echo; echo "Mode: operate"; echo "Sandbox: danger-full-access"; } > "$tasks/O2/task.md"
-"$scripts/run-codex.sh" start O2 --dry-run | grep -q 'DRY-RUN: env codex exec' || fail "operate tasks keep ssh"
-ok "full access needs ALLOW_FULL_ACCESS=yes; rounds run with approval never, without an ssh agent and with git over ssh refused, except operate"
+"$scripts/run-codex.sh" start O2 --dry-run > "$tmp/o2.out"
+grep -q '^DRY-RUN: env TMPDIR=' "$tmp/o2.out" && ! grep -q SSH_AUTH_SOCK "$tmp/o2.out" || fail "operate tasks keep ssh: $(cat "$tmp/o2.out")"
+ok "full access needs ALLOW_FULL_ACCESS=yes; rounds run with approval never, TMPDIR in the worktree, without an ssh agent and with git over ssh refused, except operate"
 
 # --- refactor and docs modes ----------------------------------------------------
 "$scripts/new-task.sh" R1 ref/r1 > /dev/null

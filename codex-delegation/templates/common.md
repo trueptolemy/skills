@@ -59,6 +59,9 @@ shared git files and other checkouts, and any change there fails the task.
 - [Interpreter and how to make it import this worktree, for example
   `PYTHONPATH="$PWD/src" /path/.venv/bin/python`, with the check command.]
 - [Untracked dependencies are symlinked; do not reinstall them.]
+- Temporary files: `TMPDIR` and `PYTEST_DEBUG_TEMPROOT` point to `.tmp/` in
+  this worktree, which git ignores. Keep every scratch file there, not under
+  `/tmp` or the home directory, and do not change these variables.
 - Run focused checks while working and before reporting: the tests for every
   file you changed and their direct consumers, plus the fast static checks on
   the changed files. Do not run the full test suite; the planner runs the full

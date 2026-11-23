@@ -64,6 +64,7 @@ instructions=$(mode_file "$TASK_MODE")
 [[ -s $instructions ]] || die "mode instructions $instructions are missing"
 dry=0
 [[ ${*: -1} == --dry-run ]] && dry=1
+(( dry )) || task_tmp
 stamp() { date -u +%FT%TZ; }
 show() { printf 'DRY-RUN:'; printf ' %q' "$@"; echo; }
 # Model and effort every round must report: the configured values, otherwise
