@@ -24,7 +24,8 @@ task() {  # id mode [allowed]
 # and the -c keys the scripts pass. `exec` edits the worktree unless
 # FAKE_NO_EDIT is set; FAKE_SANDBOX and FAKE_MODEL make the header lie;
 # FAKE_BAD_REPORT writes a report without STATUS that is too long;
-# FAKE_DURING is a shell command run during the round (FAKE_WT = worktree).
+# FAKE_DURING is a shell command run during the round (FAKE_WT = worktree);
+# FAKE_STATUS sets the report's STATUS (default DONE).
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/codex" <<'EOF'
 #!/usr/bin/env bash
@@ -67,7 +68,7 @@ if [[ $prompt == *"exactly the word OK"* ]]; then echo OK > "$report"; printf 't
 if [[ -z ${FAKE_NO_EDIT:-} ]]; then
   if (( resume )); then echo "second" >> "$wt/feature.txt"; else echo "first" > "$wt/feature.txt"; fi
 fi
-if [[ -n ${FAKE_BAD_REPORT:-} ]]; then seq 1 90 > "$report"; else printf 'STATUS: DONE\nSUMMARY: fake round\n' > "$report"; fi
+if [[ -n ${FAKE_BAD_REPORT:-} ]]; then seq 1 90 > "$report"; else printf 'STATUS: %s\nSUMMARY: fake round\n' "${FAKE_STATUS:-DONE}" > "$report"; fi
 printf 'tokens used\n1,234\n'
 EOF
 chmod +x "$tmp/bin/codex"
@@ -289,6 +290,15 @@ ok "pipeline runs Codex then the full or focused gate list; gates see CHANGED_FI
 grep -q "PIPELINE gates skipped" "$tmp/p3.out" && grep -q "# Quiet task" "$tasks/T4/prompt.md" || fail "quiet task: $(cat "$tmp/p3.out")"
 [[ ! -d $tasks/T4/gates-r1 ]] || fail "quiet task must not run gates"
 ok "a Quiet task gets the no-test instructions and the pipeline runs no gates"
+
+"$scripts/new-task.sh" P1 feat/p1 > /dev/null
+task P1 implement
+FAKE_STATUS=PARTIAL "$scripts/pipeline.sh" start P1 > "$tmp/p4.out"
+grep -q "PIPELINE stop: report status PARTIAL" "$tmp/p4.out" && [[ ! -d $tasks/P1/gates-r1 ]] || fail "PARTIAL must not run gates: $(cat "$tmp/p4.out")"
+expect_fail "$scripts/pipeline.sh" continue P1 --gates-anyway --no-gates
+FAKE_STATUS=PARTIAL "$scripts/pipeline.sh" continue P1 --gates-anyway > "$tmp/p5.out"
+grep -q "PIPELINE gates anyway: report status PARTIAL" "$tmp/p5.out" && grep -qx "RESULT PASS" "$tmp/p5.out" || fail "--gates-anyway: $(cat "$tmp/p5.out")"
+ok "the pipeline runs gates only for a DONE report unless --gates-anyway is given"
 
 # --- repository guard -----------------------------------------------------------
 "$scripts/new-task.sh" G1 guard/g1 > /dev/null

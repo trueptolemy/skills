@@ -117,6 +117,12 @@ A full gate list can take hours. Run it once per delivery, not per round:
   mechanical diff checks. With `--focused` it runs `FOCUSED_GATES_FILE`
   instead: use that for intermediate rounds and trial versions. Every gate
   sees `CHANGED_FILES` (paths changed against the merge base).
+- A PARTIAL or BLOCKED report gets no gates: the tree is unfinished, and the
+  next step is your decision on its OPEN QUESTIONS, not a suite run on a
+  known-incomplete state. When the gate result itself decides that step, add
+  `--gates-anyway`, for example to check whether a PARTIAL round's remaining
+  failures equal the baseline's. It never runs gates for a quiet,
+  investigate or operate task, or after a failed Codex run or a GUARD FAIL.
 - Several focus-tested branches that are delivered together get one combined
   full gate on their stacked result. A failure there is usually an
   integration defect, so fix it in a dedicated integration task instead of

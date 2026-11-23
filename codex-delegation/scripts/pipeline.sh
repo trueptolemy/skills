@@ -2,9 +2,9 @@
 # One background command per round: Codex, then (when its report says DONE) the
 # gates and the planner's mechanical diff checks. Prints conclusion lines only.
 # Usage:
-#   pipeline.sh start    <task-id>                [--focused | --no-gates]
-#   pipeline.sh resume   <task-id> <feedback.md>  [--focused | --no-gates]
-#   pipeline.sh continue <task-id>                [--focused | --no-gates]
+#   pipeline.sh start    <task-id>                [--focused | --no-gates] [--gates-anyway]
+#   pipeline.sh resume   <task-id> <feedback.md>  [--focused | --no-gates] [--gates-anyway]
+#   pipeline.sh continue <task-id>                [--focused | --no-gates] [--gates-anyway]
 #
 # Launch it in the background (Claude Code: Bash run_in_background) and read
 # only its output and the files it names. Gate policy:
@@ -12,6 +12,12 @@
 #   --focused   FOCUSED_GATES_FILE, for intermediate rounds and trial versions
 #   --no-gates  Codex only; also implied by investigate and operate modes and
 #               by a `Quiet: yes` task header
+# Gates run only when the report says DONE: PARTIAL, BLOCKED or a report
+# without STATUS means an unfinished tree, and the next step is the planner's
+# decision. --gates-anyway runs them for any report status, for example to
+# check that a PARTIAL round's remaining failures equal the baseline's. It
+# does not override --no-gates, a quiet task or the investigate and operate
+# modes, and a failed Codex run or a GUARD FAIL still stops the pipeline.
 # Codex itself runs only focused checks (common.md); the full list runs once,
 # here, so a round never pays for the full suite twice.
 
@@ -20,21 +26,23 @@ cdl_load
 here=$(cd "$(dirname "$0")" && pwd)
 
 mode=${1:-}; tid=${2:-}
-usage="usage: pipeline.sh start <id> | resume <id> <feedback.md> | continue <id> [--focused | --no-gates]"
+usage="usage: pipeline.sh start <id> | resume <id> <feedback.md> | continue <id> [--focused | --no-gates] [--gates-anyway]"
 [[ -n $tid ]] || die "$usage"
 case $mode in
   start|continue) cargs=("$mode" "$tid"); shift 2 ;;
   resume) cargs=(resume "$tid" "${3:?$usage}"); shift 3 ;;
   *) die "$usage" ;;
 esac
-gateset=full
+gateset=full; anyway=0
 while [[ $# -gt 0 ]]; do
   case $1 in
     --focused) gateset=focused; shift ;;
     --no-gates) gateset=none; shift ;;
+    --gates-anyway) anyway=1; shift ;;
     *) die "unknown option $1" ;;
   esac
 done
+[[ $gateset != none ]] || (( ! anyway )) || die "--gates-anyway and --no-gates contradict each other"
 task_paths "$tid"
 task_header
 
@@ -48,7 +56,10 @@ echo "PIPELINE codex rc=$rc"
 
 report=$(ls -t "$TD"/report*.md 2>/dev/null | head -n 1 || true)
 status=$(head -n 5 "$report" 2>/dev/null | grep -m1 -oE 'STATUS: *[A-Z]+' | awk '{print $2}' || true)
-[[ $status == DONE ]] || { echo "PIPELINE stop: report status ${status:-UNKNOWN}"; exit 0; }
+if [[ $status != DONE ]]; then
+  (( anyway )) || { echo "PIPELINE stop: report status ${status:-UNKNOWN} (gates run only for DONE; --gates-anyway overrides)"; exit 0; }
+  echo "PIPELINE gates anyway: report status ${status:-UNKNOWN}"
+fi
 case $TASK_MODE in investigate|operate) echo "PIPELINE $TASK_MODE: no gates"; exit 0 ;; esac
 if [[ $TASK_QUIET == yes || $gateset == none ]]; then
   echo "PIPELINE gates skipped (quiet task or --no-gates)"; exit 0

@@ -130,6 +130,7 @@ $S/new-task.sh T1 codex/t1-foo                 # chained task: --from codex/t0-b
 # write /path/repo-tasks/T1/task.md from templates/task.md
 $S/pipeline.sh start T1                        # background: Codex, then the full gates and diff checks
 $S/pipeline.sh resume T1 feedback-x.md --focused   # intermediate round: focused gates only
+$S/pipeline.sh continue T1 --gates-anyway      # gates even for a PARTIAL or BLOCKED report
 $S/ledger.sh void T1 r2 "provider HTTP 500"    # after an API error: close Codex, run
                                                # `codex app-server daemon restart`, void the round
 $S/run-codex.sh continue T1                    # a round stopped before its report: finish it
