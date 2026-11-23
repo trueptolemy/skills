@@ -1,29 +1,36 @@
 #!/usr/bin/env bash
 # Create one task's isolated worktree, branch and task directory.
-# Usage: new-task.sh <task-id> <branch> [--from <ref>] [--reuse-branch]
+# Usage: new-task.sh <task-id> <branch> [--from <ref>] [--reuse-branch] [--reuse-task]
 #
 # The worktree starts from the latest base branch unless --from names another
 # ref (for example the previous task's branch in a chained delivery). The
 # command refuses when free disk space is below MIN_FREE_GB: every worktree is a
-# full checkout, and a full disk once broke a checkout halfway.
+# full checkout, and a full disk once broke a checkout halfway. It also refuses
+# an existing task directory that already holds rounds or reports: reusing an
+# old identifier once made run-codex.sh return the previous task's report
+# instead of starting Codex. Pass --reuse-task only to continue that task.
 
 source "$(dirname "$0")/lib.sh"
 cdl_load
 
 tid=${1:-}; branch=${2:-}
-[[ -n $tid && -n $branch ]] || die "usage: new-task.sh <task-id> <branch> [--from <ref>] [--reuse-branch]"
+[[ -n $tid && -n $branch ]] || die "usage: new-task.sh <task-id> <branch> [--from <ref>] [--reuse-branch] [--reuse-task]"
 shift 2
-from=$BASE_BRANCH; reuse=0
+from=$BASE_BRANCH; reuse=0; reuse_task=0
 while [[ $# -gt 0 ]]; do
   case $1 in
     --from) from=${2:?--from needs a ref}; shift 2 ;;
     --reuse-branch) reuse=1; shift ;;
+    --reuse-task) reuse_task=1; shift ;;
     *) die "unknown option $1" ;;
   esac
 done
 task_paths "$tid"
 
 [[ ! -e $WT ]] || die "worktree $WT already exists"
+if (( ! reuse_task )) && { [[ -e $TD/rounds.log ]] || compgen -G "$TD/report*.md" > /dev/null; }; then
+  die "task directory $TD already holds an earlier task; choose a new task id (or pass --reuse-task to continue it)"
+fi
 mkdir -p "$WT_ROOT" "$TASKS_ROOT"
 free=$(free_gb "$WT_ROOT")
 need=${MIN_FREE_GB}

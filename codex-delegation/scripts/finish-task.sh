@@ -3,7 +3,9 @@
 # Usage: finish-task.sh <task-id> [<commit-message-file>] [--no-merge] [--keep-worktree]
 #
 # Refuses unless the newest gates summary of the task ends with RESULT PASS and
-# DONE, so a failing or unfinished run cannot be delivered by mistake.
+# DONE, so a failing or unfinished run cannot be delivered by mistake. An
+# investigate task needs no gates summary: it only has to leave its worktree
+# unchanged.
 #
 # investigate tasks deliver their report: nothing is committed, and the clean
 # worktree is removed. Other modes commit on the task branch; MSG_FILE_CHECK runs
@@ -35,12 +37,6 @@ task_paths "$tid"
 [[ -d $WT ]] || die "worktree $WT does not exist"
 task_header
 
-latest=$(ls -td "$TD"/gates-*/ 2>/dev/null | head -n 1 || true)
-[[ -n $latest ]] || die "no gates summary under $TD; run run-gates.sh first"
-summary=${latest%/}/summary.txt
-[[ $(tail -n 1 "$summary") == DONE ]] || die "$summary has not finished (no DONE line)"
-[[ $(tail -n 2 "$summary" | head -n 1) == "RESULT PASS" ]] || die "$summary did not pass"
-
 remove_worktree() {
   if (( keep )); then echo "kept worktree $WT"; return; fi
   if [[ -z $(git -C "$WT" status --porcelain) ]]; then
@@ -56,6 +52,14 @@ if [[ $TASK_MODE == investigate ]]; then
   remove_worktree
   exit 0
 fi
+
+latest=$(ls -td "$TD"/gates-*/ 2>/dev/null | head -n 1 || true)
+[[ -n $latest ]] || die "no gates summary under $TD; run run-gates.sh first"
+summary=${latest%/}/summary.txt
+[[ $(tail -n 1 "$summary") == DONE ]] || die "$summary has not finished (no DONE line)"
+[[ $(tail -n 2 "$summary" | head -n 1) == "RESULT PASS" ]] || die "$summary did not pass"
+
+
 
 [[ -n $msg && -s $msg ]] || die "commit message file is missing or empty"
 msg=$(cd "$(dirname "$msg")" && pwd)/$(basename "$msg")

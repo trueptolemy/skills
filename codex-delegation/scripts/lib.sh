@@ -121,7 +121,10 @@ report_check() {
   lines=$(wc -l < "$report")
   status=$(head -n 5 "$report" | grep -m1 -oE 'STATUS: *[A-Z]+' | awk '{print $2}' || true)
   echo "REPORT STATUS=${status:-UNKNOWN} lines=$lines $report"
-  [[ -n $status ]] || echo "REPORT WARNING: no STATUS line in the first 5 lines"
+  if [[ -z $status ]]; then
+    echo "REPORT WARNING: no STATUS line in the first 5 lines"
+    echo "REPORT HINT: the round may have stopped early; check the log tail for a provider error, restart the Codex service if needed, then run run-codex.sh continue $TID"
+  fi
   (( lines <= REPORT_MAX_LINES )) || echo "REPORT WARNING: $lines lines exceed $REPORT_MAX_LINES"
 }
 

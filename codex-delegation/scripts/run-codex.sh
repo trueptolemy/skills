@@ -3,6 +3,7 @@
 # Usage:
 #   run-codex.sh start  <task-id> [--dry-run]
 #   run-codex.sh resume <task-id> <feedback.md> [--dry-run]
+#   run-codex.sh continue <task-id> [--dry-run]
 #
 # Launch this command in the background (Claude Code: Bash run_in_background)
 # and wait for its completion notification. Do not poll the log and do not use
@@ -18,6 +19,13 @@
 #        per-task circuit breaker). `codex exec resume` has no --sandbox or --cd
 #        flag, so the sandbox is passed with -c and the command runs from the
 #        worktree. The index is unstaged first because the gate runner stages it.
+# continue resumes with a standard "finish the work and write the report"
+#        message. Use it when a round stopped early: its report has no STATUS
+#        line, or it is a progress note. If the log tail shows a provider or
+#        transport error, restart the Codex service first (for example
+#        `codex app-server daemon restart`).
+# A feedback file may already be named feedback-rN.md inside the task
+# directory; it is not copied onto itself.
 # --dry-run prints the Codex command and writes nothing.
 # On completion it prints `REPORT STATUS=<status> lines=<n>` and
 # `CODEX model=... sandbox=... tokens=...`, with warnings for a malformed report
@@ -27,8 +35,8 @@ source "$(dirname "$0")/lib.sh"
 cdl_load
 
 mode=${1:-}; tid=${2:-}
-[[ $mode == start || $mode == resume ]] && [[ -n $tid ]] ||
-  die "usage: run-codex.sh start <task-id> | resume <task-id> <feedback.md> [--dry-run]"
+[[ $mode == start || $mode == resume || $mode == continue ]] && [[ -n $tid ]] ||
+  die "usage: run-codex.sh start <task-id> | resume <task-id> <feedback.md> | continue <task-id> [--dry-run]"
 task_paths "$tid"
 [[ -d $WT ]] || die "worktree $WT does not exist; run new-task.sh first"
 [[ -d $TD ]] || die "task directory $TD does not exist"
@@ -66,12 +74,26 @@ if [[ $mode == start ]]; then
   exit "$rc"
 fi
 
-feedback=${3:-}
-[[ -s $feedback ]] || die "feedback file '$feedback' is missing or empty"
 [[ -f $TD/codex.log ]] || die "$TD/codex.log is missing; nothing to resume"
+n=$(next_round)
+if [[ $mode == continue ]]; then
+  feedback=$TD/continue-r$n.md
+  if (( ! dry )); then
+    cat > "$feedback" <<'MSG'
+# Continue and finish
+
+Your previous round ended before its final report. Continue from the current
+working tree: finish the task as specified, run the checks the task requires,
+and write the complete report in the required format, starting with the STATUS
+line. Do not restart work that is already done.
+MSG
+  fi
+else
+  feedback=${3:-}
+  [[ -s $feedback ]] || die "feedback file '$feedback' is missing or empty"
+fi
 sid=$(grep -m1 -oiE 'session id: [0-9a-f-]{8,}' "$TD/codex.log" | awk '{print $3}' || true)
 [[ -n $sid ]] || die "no 'session id:' line in $TD/codex.log"
-n=$(next_round)
 if (( n > MAX_ROUNDS )); then
   echo "BREAKER: $TID already used $((n - 1)) of MAX_ROUNDS=$MAX_ROUNDS rounds." >&2
   echo "Stop this task without committing, keep its worktree and report its state." >&2
@@ -79,7 +101,10 @@ if (( n > MAX_ROUNDS )); then
 fi
 cmd=(codex exec resume -c "sandbox_mode=\"$sandbox\"" -o "$TD/report-r$n.md" "$sid" -)
 if (( dry )); then show "${cmd[@]}"; echo "cwd: $WT; stdin: $feedback; round $n"; exit 0; fi
-cp "$feedback" "$TD/feedback-r$n.md"
+target=$TD/feedback-r$n.md
+if [[ $(realpath -m "$feedback") != "$(realpath -m "$target")" ]]; then
+  cp "$feedback" "$target"
+fi
 git -C "$WT" reset -q
 echo "round $n resume $sid mode=$TASK_MODE sandbox=$sandbox $(stamp)" >> "$TD/rounds.log"
 set +e

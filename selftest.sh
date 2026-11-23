@@ -166,6 +166,7 @@ printf 'Round finding.\n' > "$tmp/feedback.md"
 [[ -z $(git -C "$tmp/repo-wt/T1" diff --cached --name-only) ]] || fail "resume should unstage"
 FAKE_BAD_REPORT=1 "$scripts/run-codex.sh" resume T1 "$tmp/feedback.md" > "$tmp/bad.out"
 grep -q "no STATUS line" "$tmp/bad.out" && grep -q "90 lines exceed 80" "$tmp/bad.out" || fail "report drift warnings"
+grep -q "REPORT HINT: .*run-codex.sh continue T1" "$tmp/bad.out" || fail "truncated-report recovery hint"
 expect_fail "$scripts/run-codex.sh" resume T1 "$tmp/feedback.md"
 grep -q "BREAKER: T1 already used 3 of MAX_ROUNDS=3" "$tmp/last.out" || fail "round breaker"
 ok "resume continues the session, warns on report drift and stops at MAX_ROUNDS"
@@ -177,6 +178,23 @@ grep -q "message check failed" "$tmp/last.out" || fail "message check"
 "$scripts/finish-task.sh" T1 "$tmp/msg.txt" > /dev/null
 [[ $(git -C "$repo" log -1 --format=%s main) == "feat: x" && ! -d $tmp/repo-wt/T1 ]] || fail "ff delivery"
 ok "finish-task checks the message, commits, fast-forwards and removes the worktree"
+
+expect_fail "$scripts/new-task.sh" T1 feat/t1-again
+grep -q "already holds an earlier task" "$tmp/last.out" || fail "reused task directory must refuse"
+ok "new-task refuses a task directory that holds an earlier task"
+
+# --- feedback naming and continue ------------------------------------------------
+"$scripts/new-task.sh" T2 feat/t2 > /dev/null
+task T2 implement
+"$scripts/run-codex.sh" start T2 > /dev/null
+printf 'Named like the archive copy.\n' > "$tasks/T2/feedback-r2.md"
+"$scripts/run-codex.sh" resume T2 "$tasks/T2/feedback-r2.md" > "$tmp/same.out" || fail "same-name feedback must resume"
+[[ -f $tasks/T2/report-r2.md ]] || fail "same-name feedback round"
+"$scripts/run-codex.sh" continue T2 --dry-run | grep -q 'stdin: .*/continue-r3.md' || fail "continue dry run"
+"$scripts/run-codex.sh" continue T2 > /dev/null
+[[ -f $tasks/T2/report-r3.md && -f $tasks/T2/continue-r3.md && -f $tasks/T2/feedback-r3.md ]] || fail "continue round"
+grep -q "write the complete report" "$tasks/T2/feedback-r3.md" || fail "continue message"
+ok "resume accepts a feedback file already named like its archive copy; continue sends the standard finish message"
 
 # --- investigate mode ----------------------------------------------------------
 "$scripts/new-task.sh" Q1 inv/q1 > /dev/null
@@ -199,6 +217,13 @@ before=$(git -C "$repo" rev-parse main)
 [[ $(git -C "$repo" rev-parse main) == "$before" && ! -d $tmp/repo-wt/Q1 ]] || fail "investigate delivery"
 grep -q "delivers its report" "$tmp/q1f.out" || fail "investigate report delivery"
 ok "investigate runs read-only, warns on a sandbox mismatch, must not change files and commits nothing"
+
+"$scripts/new-task.sh" Q2 inv/q2 > /dev/null
+task Q2 investigate
+FAKE_NO_EDIT=1 "$scripts/run-codex.sh" start Q2 > /dev/null
+"$scripts/finish-task.sh" Q2 > "$tmp/q2f.out" || fail "investigate finish must not need a gates summary"
+[[ ! -d $tmp/repo-wt/Q2 ]] && grep -q "delivers its report" "$tmp/q2f.out" || fail "investigate finish without gates"
+ok "an investigate task finishes without a gates summary when its worktree is unchanged"
 
 # --- refactor and docs modes ----------------------------------------------------
 "$scripts/new-task.sh" R1 ref/r1 > /dev/null
@@ -246,7 +271,7 @@ expect_fail "$scripts/ledger.sh" full-read T1 "log 4"
 grep -q "BREAKER: full read 4 would exceed MAX_FULL_READS=3" "$tmp/last.out" || fail "full-read breaker"
 "$scripts/ledger.sh" status > "$tmp/status.out"
 grep -qE '^T1 +implement +3 +3702' "$tmp/status.out" || fail "ledger rounds and tokens: $(cat "$tmp/status.out")"
-grep -q "TOTAL tokens=6170 full-reads=3/3" "$tmp/status.out" || fail "ledger totals: $(cat "$tmp/status.out")"
+grep -q "TOTAL tokens=11106 full-reads=3/3" "$tmp/status.out" || fail "ledger totals: $(cat "$tmp/status.out")"
 ok "ledger enforces MAX_FULL_READS and sums rounds and tokens per task"
 
 # --- install.sh ----------------------------------------------------------------------
