@@ -5,7 +5,7 @@
 set -euo pipefail
 
 SKILL_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-MODES="implement refactor docs investigate"
+MODES="implement refactor docs investigate operate"
 VERIFIED_CODEX_VERSIONS="0.162.1"
 
 die() { echo "error: $*" >&2; exit 2; }
@@ -60,9 +60,10 @@ task_paths() {
 }
 
 # Read the task header fields from the first 30 lines of task.md:
-#   Mode: implement|refactor|docs|investigate     (default implement)
+#   Mode: implement|refactor|docs|investigate|operate (default implement)
 #   Allowed paths: src/foo/*, tests/test_foo*      (optional scope globs)
-#   Sandbox: read-only|workspace-write             (optional override)
+#   Sandbox: read-only|workspace-write             (optional override;
+#            operate requires it and also accepts danger-full-access)
 #   Quiet: yes                                     (no test runs; see quiet.md)
 task_header() {
   local file=$TD/task.md value
@@ -82,11 +83,20 @@ task_header() {
   case $value in
     "") ;;
     read-only|workspace-write) TASK_SANDBOX=$value ;;
-    *) die "task.md Sandbox '$value' must be read-only or workspace-write" ;;
+    danger-full-access)
+      [[ $TASK_MODE == operate ]] || die "task.md Sandbox danger-full-access is allowed only in operate mode"
+      TASK_SANDBOX=$value ;;
+    *) die "task.md Sandbox '$value' must be read-only, workspace-write or (operate only) danger-full-access" ;;
   esac
+  # An operate task acts on a real system; its sandbox is always an explicit,
+  # user-authorized choice, never a default.
+  if [[ $TASK_MODE == operate && -z $TASK_SANDBOX ]]; then
+    die "operate mode requires an explicit Sandbox: line in task.md"
+  fi
 }
 
-# The sandbox a task runs in: investigate is read-only unless overridden.
+# The sandbox a task runs in: investigate is read-only unless overridden, and
+# operate always names its own.
 task_sandbox() {
   if [[ -n $TASK_SANDBOX ]]; then echo "$TASK_SANDBOX"
   elif [[ $TASK_MODE == investigate ]]; then echo read-only

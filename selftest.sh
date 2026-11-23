@@ -245,6 +245,25 @@ FAKE_NO_EDIT=1 "$scripts/run-codex.sh" start Q2 > /dev/null
 [[ ! -d $tmp/repo-wt/Q2 ]] && grep -q "delivers its report" "$tmp/q2f.out" || fail "investigate finish without gates"
 ok "an investigate task finishes without a gates summary when its worktree is unchanged"
 
+# --- operate mode ----------------------------------------------------------------
+"$scripts/new-task.sh" O1 op/o1 > /dev/null
+task O1 operate
+expect_fail "$scripts/run-codex.sh" start O1 --dry-run
+grep -q "operate mode requires an explicit Sandbox" "$tmp/last.out" || fail "operate sandbox must be explicit"
+{ echo "# O1: stage"; echo; echo "Mode: operate"; echo "Sandbox: danger-full-access"; echo; echo "Run the stage."; } > "$tasks/O1/task.md"
+"$scripts/run-codex.sh" start O1 --dry-run | grep -q -- '-s danger-full-access' || fail "operate sandbox"
+FAKE_NO_EDIT=1 "$scripts/run-codex.sh" start O1 > /dev/null
+grep -q "# Mode: operate" "$tasks/O1/prompt.md" || fail "operate instructions"
+"$scripts/run-gates.sh" O1 r1 > /dev/null
+summary O1 r1 | grep -q "^UNCHANGED" && ! summary O1 r1 | grep -q "^harness" || fail "operate runs no gates"
+"$scripts/finish-task.sh" O1 > "$tmp/o1f.out" && grep -q "operate task O1 delivers its report" "$tmp/o1f.out" || fail "operate delivery"
+{ echo "# T5: bad"; echo; echo "Mode: implement"; echo "Sandbox: danger-full-access"; } > "$tmp/t5.md"
+"$scripts/new-task.sh" T5 feat/t5 > /dev/null
+cp "$tmp/t5.md" "$tasks/T5/task.md"
+expect_fail "$scripts/run-codex.sh" start T5 --dry-run
+grep -q "allowed only in operate mode" "$tmp/last.out" || fail "full access outside operate must refuse"
+ok "operate needs an explicit sandbox, may use full access, runs no gates and commits nothing; other modes refuse full access"
+
 # --- refactor and docs modes ----------------------------------------------------
 "$scripts/new-task.sh" R1 ref/r1 > /dev/null
 task R1 refactor
@@ -291,7 +310,7 @@ expect_fail "$scripts/ledger.sh" full-read T1 "log 4"
 grep -q "BREAKER: full read 4 would exceed MAX_FULL_READS=3" "$tmp/last.out" || fail "full-read breaker"
 "$scripts/ledger.sh" status > "$tmp/status.out"
 grep -qE '^T1 +implement +3 +3702' "$tmp/status.out" || fail "ledger rounds and tokens: $(cat "$tmp/status.out")"
-grep -q "TOTAL tokens=14808 full-reads=3/3" "$tmp/status.out" || fail "ledger totals: $(cat "$tmp/status.out")"
+grep -q "TOTAL tokens=16042 full-reads=3/3" "$tmp/status.out" || fail "ledger totals: $(cat "$tmp/status.out")"
 ok "ledger enforces MAX_FULL_READS and sums rounds and tokens per task"
 
 # --- install.sh ----------------------------------------------------------------------

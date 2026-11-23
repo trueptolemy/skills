@@ -4,10 +4,10 @@
 #
 # Refuses unless the newest gates summary of the task ends with RESULT PASS and
 # DONE, so a failing or unfinished run cannot be delivered by mistake. An
-# investigate task needs no gates summary: it only has to leave its worktree
-# unchanged.
+# investigate or operate task needs no gates summary: it only has to leave its
+# worktree unchanged.
 #
-# investigate tasks deliver their report: nothing is committed, and the clean
+# investigate and operate tasks deliver their report: nothing is committed, and the clean
 # worktree is removed. Other modes commit on the task branch; MSG_FILE_CHECK runs
 # before the commit with {file} replaced by the message path and
 # MSG_COMMIT_CHECK after it with {rev} replaced by the new commit. DELIVERY then
@@ -46,9 +46,9 @@ remove_worktree() {
   fi
 }
 
-if [[ $TASK_MODE == investigate ]]; then
-  [[ -z $(git -C "$WT" status --porcelain) ]] || die "investigate task $TID changed its worktree; nothing may be delivered"
-  echo "investigate task $TID delivers its report: $(ls -t "$TD"/report*.md | head -n 1)"
+if [[ $TASK_MODE == investigate || $TASK_MODE == operate ]]; then
+  [[ -z $(git -C "$WT" status --porcelain) ]] || die "$TASK_MODE task $TID changed its worktree; nothing may be delivered"
+  echo "$TASK_MODE task $TID delivers its report: $(ls -t "$TD"/report*.md | head -n 1)"
   remove_worktree
   exit 0
 fi

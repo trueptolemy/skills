@@ -11,6 +11,7 @@
 #
 # Checks depend on the task.md Mode:
 #   investigate  the worktree must be unchanged; no gates run
+#   operate      the same: an operation stage changes no repository file
 #   docs         every changed file must match DOC_PATHS
 #   refactor     no existing file matching TEST_PATHS may be modified or deleted
 #   all others   optional "Allowed paths" scope, then every gate
@@ -86,9 +87,9 @@ offenders() {  # label, newline-separated paths
 
 changed=$(git diff --cached --name-only)
 case $TASK_MODE in
-  investigate)
+  investigate|operate)
     offenders "CHANGED" "$changed"
-    [[ -n $changed ]] || note "UNCHANGED worktree has no changes, as investigate mode requires"
+    [[ -n $changed ]] || note "UNCHANGED worktree has no changes, as $TASK_MODE mode requires"
     ;;
   docs)
     offenders "NONDOC" "$(printf '%s\n' "$changed" | grep -vE "$DOC_PATHS" | grep . || true)"
@@ -99,7 +100,7 @@ case $TASK_MODE in
     ;;
 esac
 
-if [[ -n $TASK_ALLOWED && $TASK_MODE != investigate ]]; then
+if [[ -n $TASK_ALLOWED && $TASK_MODE != investigate && $TASK_MODE != operate ]]; then
   outside=""
   while IFS= read -r path; do
     [[ -n $path ]] || continue
@@ -110,7 +111,7 @@ if [[ -n $TASK_ALLOWED && $TASK_MODE != investigate ]]; then
 fi
 
 count=0
-if [[ $TASK_MODE != investigate ]]; then
+if [[ $TASK_MODE != investigate && $TASK_MODE != operate ]]; then
   [[ -f $gates ]] || die "gates file $gates not found"
   while IFS= read -r line || [[ -n $line ]]; do
     [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
