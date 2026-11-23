@@ -14,6 +14,6 @@ SUMMARY: at most 5 lines
 FILES: one line per changed document with +added/-removed lines
 CLAIMS VERIFIED: one line per changed factual claim — evidence file:line or command
 CODE/DOC DISAGREEMENTS: none, or each disagreement found and left unresolved
-GATES: one line per required command: PASS or FAIL with a one-line reason
+GATES: one line per check you ran (focused tests, static checks): PASS or FAIL with a one-line reason
 OPEN QUESTIONS: anything the planner must decide
 ```

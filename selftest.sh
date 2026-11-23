@@ -196,6 +196,26 @@ printf 'Named like the archive copy.\n' > "$tasks/T2/feedback-r2.md"
 grep -q "write the complete report" "$tasks/T2/feedback-r3.md" || fail "continue message"
 ok "resume accepts a feedback file already named like its archive copy; continue sends the standard finish message"
 
+# --- pipeline, focused gates and quiet tasks ------------------------------------
+cat > "$tasks/focused.txt" <<'GATES'
+changed | case " $CHANGED_FILES " in *" feature.txt "*) ;; *) echo "missing: $CHANGED_FILES"; false ;; esac
+GATES
+"$scripts/new-task.sh" T3 feat/t3 > /dev/null
+task T3 implement
+"$scripts/pipeline.sh" start T3 > "$tmp/p1.out" || fail "pipeline start"
+grep -q "PIPELINE codex rc=0" "$tmp/p1.out" && grep -qx "RESULT PASS" "$tmp/p1.out" && grep -q "^DIFF " "$tmp/p1.out" || fail "pipeline full gates: $(cat "$tmp/p1.out")"
+summary T3 r1 | grep -q "GATESET  $tasks/gates.txt" || fail "full gate set recorded"
+"$scripts/pipeline.sh" resume T3 "$tmp/feedback.md" --focused > "$tmp/p2.out" || fail "pipeline focused"
+grep -qx "RESULT PASS" "$tmp/p2.out" && summary T3 f2 | grep -q "GATESET  $tasks/focused.txt" || fail "focused gates and CHANGED_FILES: $(cat "$tmp/p2.out")"
+ok "pipeline runs Codex then the full or focused gate list; gates see CHANGED_FILES"
+
+"$scripts/new-task.sh" T4 feat/t4 > /dev/null
+{ echo "# T4: quiet task"; echo; echo "Mode: implement"; echo "Quiet: yes"; echo; echo "Edit."; } > "$tasks/T4/task.md"
+"$scripts/pipeline.sh" start T4 > "$tmp/p3.out" || fail "pipeline quiet"
+grep -q "PIPELINE gates skipped" "$tmp/p3.out" && grep -q "# Quiet task" "$tasks/T4/prompt.md" || fail "quiet task: $(cat "$tmp/p3.out")"
+[[ ! -d $tasks/T4/gates-r1 ]] || fail "quiet task must not run gates"
+ok "a Quiet task gets the no-test instructions and the pipeline runs no gates"
+
 # --- investigate mode ----------------------------------------------------------
 "$scripts/new-task.sh" Q1 inv/q1 > /dev/null
 task Q1 investigate
@@ -271,7 +291,7 @@ expect_fail "$scripts/ledger.sh" full-read T1 "log 4"
 grep -q "BREAKER: full read 4 would exceed MAX_FULL_READS=3" "$tmp/last.out" || fail "full-read breaker"
 "$scripts/ledger.sh" status > "$tmp/status.out"
 grep -qE '^T1 +implement +3 +3702' "$tmp/status.out" || fail "ledger rounds and tokens: $(cat "$tmp/status.out")"
-grep -q "TOTAL tokens=11106 full-reads=3/3" "$tmp/status.out" || fail "ledger totals: $(cat "$tmp/status.out")"
+grep -q "TOTAL tokens=14808 full-reads=3/3" "$tmp/status.out" || fail "ledger totals: $(cat "$tmp/status.out")"
 ok "ledger enforces MAX_FULL_READS and sums rounds and tokens per task"
 
 # --- install.sh ----------------------------------------------------------------------

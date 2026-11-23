@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Independently run every acceptance check of one task worktree.
-# Usage: run-gates.sh <task-id> <round-label>     e.g. run-gates.sh T3 r2
+# Usage: run-gates.sh <task-id> <round-label> [--gates FILE] [--base REF]
+#        e.g. run-gates.sh T3 r2            the full gate list (GATES_FILE)
+#             run-gates.sh T3 f2 --focused  the focused list (FOCUSED_GATES_FILE)
 #
 # Run it in the background (Claude Code: Bash run_in_background) and read only
 # <task-dir>/gates-<label>/summary.txt. The last line is always DONE; the line
@@ -15,7 +17,13 @@
 # Added lines matching SUPPRESSION_PATTERN fail; SKIP_PATTERN matches are
 # reported as warnings for review.
 #
-# GATES_FILE lines are `name | shell command`; lines starting with '#' are
+# Gate lists: the full list (GATES_FILE) is the acceptance evidence before a
+# delivery. The focused list (FOCUSED_GATES_FILE, selected with --focused) is
+# for intermediate rounds and trial versions: tests for changed files and their
+# consumers plus fast static checks. Every gate sees CHANGED_FILES, the
+# space-separated paths changed against the merge base with --base (default
+# BASE_BRANCH), including staged new files.
+# Gate lines are `name | shell command`; lines starting with '#' are
 # comments. Each command reads /dev/null, so it cannot consume the list. Commands
 # run in the worktree with WT exported and GATE_ENV applied, for example
 # GATE_ENV='PYTHONPATH=$WT/src' when an editable install points elsewhere.
@@ -30,7 +38,17 @@ source "$(dirname "$0")/lib.sh"
 cdl_load
 
 tid=${1:-}; label=${2:-}
-[[ -n $tid && -n $label ]] || die "usage: run-gates.sh <task-id> <round-label>"
+[[ -n $tid && -n $label ]] || die "usage: run-gates.sh <task-id> <round-label> [--gates FILE | --focused] [--base REF]"
+shift 2
+gates=$GATES_FILE; base=$BASE_BRANCH
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --gates) gates=${2:?--gates needs a file}; shift 2 ;;
+    --focused) gates=$FOCUSED_GATES_FILE; shift ;;
+    --base) base=${2:?--base needs a ref}; shift 2 ;;
+    *) die "unknown option $1" ;;
+  esac
+done
 task_paths "$tid"
 [[ -d $WT ]] || die "worktree $WT does not exist"
 task_header
@@ -49,6 +67,11 @@ note "WORKTREE $WT"
 note "HEAD     $(git log --oneline -1)"
 note "MODE     $TASK_MODE"
 note "STAGED   $(git diff --cached --name-only | wc -l) files"
+note "GATESET  $gates"
+merge_base=$(git merge-base "$base" HEAD 2>/dev/null || git rev-parse "$base")
+CHANGED_FILES=$( { git diff --name-only --diff-filter=AMR "$merge_base" HEAD; git diff --cached --name-only --diff-filter=AMR; } |
+  sort -u | tr '\n' ' ')
+export CHANGED_FILES
 failed=0
 
 # Report at most twenty offending paths, then a count.
@@ -88,7 +111,7 @@ fi
 
 count=0
 if [[ $TASK_MODE != investigate ]]; then
-  [[ -f $GATES_FILE ]] || die "gates file $GATES_FILE not found"
+  [[ -f $gates ]] || die "gates file $gates not found"
   while IFS= read -r line || [[ -n $line ]]; do
     [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
     [[ $line == *"|"* ]] || { note "BADLINE  $line"; failed=1; continue; }
@@ -108,8 +131,8 @@ if [[ $TASK_MODE != investigate ]]; then
       grep -E "$FAIL_PATTERN" "$out/$name.log" | head -n 10 | cut -c1-160 |
         sed 's/^/    fail: /' >> "$summary" || true
     fi
-  done < "$GATES_FILE"
-  (( count > 0 )) || { note "NOGATES  $GATES_FILE has no gate lines"; failed=1; }
+  done < "$gates"
+  (( count > 0 )) || { note "NOGATES  $gates has no gate lines"; failed=1; }
 fi
 
 added_lines=$(git diff --cached -U0 | grep -E '^\+[^+]' || true)

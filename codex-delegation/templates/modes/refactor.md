@@ -14,7 +14,7 @@ SUMMARY: at most 5 lines, including what was restructured and why it is safe
 FILES: one line per changed or new file with +added/-removed lines
 BEHAVIOR EVIDENCE: the commands and tests that show behavior is unchanged
 TESTS ADDED: one line per pinning test: name — behavior it pins
-GATES: one line per required command: PASS or FAIL with a one-line reason
+GATES: one line per check you ran (focused tests, static checks): PASS or FAIL with a one-line reason
 INVESTIGATION FINDINGS: facts you established for the listed unknowns, file:line
 DEVIATIONS FROM CONTRACT: none, or each deviation and reason
 OPEN QUESTIONS: anything the planner must decide

@@ -12,7 +12,8 @@
 #
 # The task.md header selects the mode (implement, refactor, docs, investigate)
 # and therefore the sandbox: investigate runs read-only. The prompt is
-# task.md + common.md + the mode instructions.
+# task.md + common.md + the mode instructions, plus quiet.md when the task
+# header says `Quiet: yes` (a measurement on the same host forbids test runs).
 # start  writes report.md and codex.log.
 # resume continues the recorded session with a feedback file and writes
 #        report-rN.md and codex-rN.log. It refuses beyond MAX_ROUNDS (the
@@ -64,7 +65,9 @@ if [[ $mode == start ]]; then
   if (( dry )); then
     show "${cmd[@]}"; echo "stdin: task.md + common.md + $instructions"; exit 0
   fi
-  cat "$TD/task.md" "$TASKS_ROOT/common.md" "$instructions" > "$TD/prompt.md"
+  quiet=()
+  [[ $TASK_QUIET == no ]] || quiet=("$SKILL_DIR/templates/quiet.md")
+  cat "$TD/task.md" "$TASKS_ROOT/common.md" "$instructions" "${quiet[@]}" > "$TD/prompt.md"
   echo "round 1 start mode=$TASK_MODE sandbox=$sandbox $(stamp)" >> "$TD/rounds.log"
   set +e
   "${cmd[@]}" < "$TD/prompt.md" > "$TD/codex.log" 2>&1

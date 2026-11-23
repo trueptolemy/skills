@@ -45,9 +45,11 @@ You do all investigation the task needs; report what you established.
 - [Interpreter and how to make it import this worktree, for example
   `PYTHONPATH="$PWD/src" /path/.venv/bin/python`, with the check command.]
 - [Untracked dependencies are symlinked; do not reinstall them.]
-- Run focused tests while working. Before reporting, run every required gate
-  from the development process. New untracked files are not seen by
-  tracked-file checks; list them in the report instead of staging them.
+- Run focused checks while working and before reporting: the tests for every
+  file you changed and their direct consumers, plus the fast static checks on
+  the changed files. Do not run the full test suite; the planner runs the full
+  gate list once, independently, after your round. New untracked files are not
+  seen by tracked-file checks; list them in the report instead of staging them.
 
 ## Report
 

@@ -13,7 +13,7 @@ SUMMARY: at most 5 lines
 FILES: one line per changed or new file with +added/-removed lines
 TESTS ADDED: one line per test: name — property it proves
 EXISTING TESTS TOUCHED: none, or each file::test with the exact before/after
-GATES: one line per required command: PASS or FAIL with a one-line reason
+GATES: one line per check you ran (focused tests, static checks): PASS or FAIL with a one-line reason
 INVESTIGATION FINDINGS: facts you established for the listed unknowns, file:line
 DEVIATIONS FROM CONTRACT: none, or each deviation and reason
 DOCS AND LIMITATIONS: owning documents and known-issue entries changed

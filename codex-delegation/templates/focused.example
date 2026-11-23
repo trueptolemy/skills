@@ -1,0 +1,10 @@
+# Focused gate list for run-gates.sh --focused: intermediate rounds and trial
+# versions. Same format as gates.txt. CHANGED_FILES holds the paths changed
+# against the merge base. The full gate list still runs once before delivery.
+
+# --- Python: changed tests, tests importing changed modules, static checks ----
+import-path | python -c 'import mypkg, os, sys; p = os.path.realpath(mypkg.__file__); sys.exit(0 if p.startswith(os.environ["WT"] + "/") else p)'
+tests       | mods=$(printf '%s\n' $CHANGED_FILES | sed -n 's#^src/.*/\([a-z_0-9]*\)\.py$#\1#p' | paste -sd'|'); files=$( (printf '%s\n' $CHANGED_FILES | grep '^tests/test_.*\.py$'; [ -n "$mods" ] && grep -lE "\b($mods)\b" tests/test_*.py) | sort -u); [ -z "$files" ] && echo "no focused tests" || python -m pytest -q $files
+ruff        | py=$(printf '%s\n' $CHANGED_FILES | grep '\.py$'); [ -z "$py" ] || python -m ruff check $py
+format      | py=$(printf '%s\n' $CHANGED_FILES | grep '\.py$'); [ -z "$py" ] || python -m ruff format --check $py
+mypy        | python -m mypy src/mypkg

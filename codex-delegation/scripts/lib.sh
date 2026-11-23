@@ -31,6 +31,7 @@ cdl_load() {
   WT_ROOT=${WT_ROOT:-${REPO}-wt}
   TASKS_ROOT=${TASKS_ROOT:-${REPO}-tasks}
   GATES_FILE=${GATES_FILE:-$TASKS_ROOT/gates.txt}
+  FOCUSED_GATES_FILE=${FOCUSED_GATES_FILE:-$TASKS_ROOT/focused.txt}
   SETUP_HOOK=${SETUP_HOOK:-}
   MIN_FREE_GB=${MIN_FREE_GB:-3}
   CODEX_SANDBOX=${CODEX_SANDBOX:-workspace-write}
@@ -62,14 +63,21 @@ task_paths() {
 #   Mode: implement|refactor|docs|investigate     (default implement)
 #   Allowed paths: src/foo/*, tests/test_foo*      (optional scope globs)
 #   Sandbox: read-only|workspace-write             (optional override)
+#   Quiet: yes                                     (no test runs; see quiet.md)
 task_header() {
   local file=$TD/task.md value
-  TASK_MODE=implement; TASK_ALLOWED=""; TASK_SANDBOX=""
+  TASK_MODE=implement; TASK_ALLOWED=""; TASK_SANDBOX=""; TASK_QUIET=no
   [[ -f $file ]] || return 0
   value=$(head -n 30 "$file" | sed -n 's/^Mode:[[:space:]]*//p' | head -n 1 | xargs || true)
   [[ -z $value ]] || TASK_MODE=$value
   [[ " $MODES " == *" $TASK_MODE "* ]] || die "task.md Mode '$TASK_MODE' is not one of: $MODES"
   TASK_ALLOWED=$(head -n 30 "$file" | sed -n 's/^Allowed paths:[[:space:]]*//p' | head -n 1 || true)
+  value=$(head -n 30 "$file" | sed -n 's/^Quiet:[[:space:]]*//p' | head -n 1 | xargs || true)
+  case $value in
+    ""|no) ;;
+    yes) TASK_QUIET=yes ;;
+    *) die "task.md Quiet '$value' must be yes or no" ;;
+  esac
   value=$(head -n 30 "$file" | sed -n 's/^Sandbox:[[:space:]]*//p' | head -n 1 | xargs || true)
   case $value in
     "") ;;
