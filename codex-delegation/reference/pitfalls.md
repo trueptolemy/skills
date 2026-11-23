@@ -82,6 +82,14 @@ branches and combined integration gates.
   by `run-gates.sh`), then `grep` one log for a pattern. Only a whole-log or
   whole-diff view counts as a full read toward the breaker.
 
+**A placeholder file costs a tool call.**
+- Trap: `new-task.sh` copied the task template to `task.md`, and Claude Code's
+  Write tool refuses to overwrite a file it has not read, so every task cost
+  one extra Read of a placeholder.
+- Fix: `new-task.sh` creates no `task.md`; write it as a new file from
+  `templates/task.md`. `run-codex.sh start` refuses a missing `task.md` and one
+  that still holds the template's placeholders.
+
 **Restarting Codex instead of resuming.**
 - Trap: a fresh session re-reads the repository and rules for every round.
 - Fix: send `feedback.md` into the recorded session with `run-codex.sh resume`.

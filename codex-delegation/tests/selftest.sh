@@ -145,10 +145,15 @@ ok "doctor refuses extra flags resume lacks; smoke runs with the round arguments
 
 # --- implement mode, rounds, breakers ------------------------------------------
 "$scripts/new-task.sh" T1 feat/t1 > /dev/null
-[[ -d $tmp/repo-wt/T1 && -f $tasks/T1/task.md && -f $tasks/common.md ]] || fail "new-task layout"
+[[ -d $tmp/repo-wt/T1 && -d $tasks/T1 && ! -e $tasks/T1/task.md && -f $tasks/common.md ]] || fail "new-task layout"
+expect_fail "$scripts/run-codex.sh" start T1 --dry-run
+grep -q "task.md is missing or empty; write it from .*templates/task.md" "$tmp/last.out" || fail "missing task.md"
+cp "$here/templates/task.md" "$tasks/T1/task.md"
+expect_fail "$scripts/run-codex.sh" start T1 --dry-run
+grep -q "still holds template placeholders" "$tmp/last.out" || fail "template task.md"
 [[ -d $tmp/repo-wt/T1/.tmp ]] && grep -qxF '/.tmp/' "$repo/.git/info/exclude" || fail "per-worktree temporary directory"
 expect_fail "$scripts/new-task.sh" T1 feat/t1
-ok "new-task creates worktree, branch, task files and an ignored .tmp/ and refuses a duplicate"
+ok "new-task creates worktree, branch, task directory and an ignored .tmp/ but no task.md, refuses a duplicate; start needs a written task.md"
 
 inodes=$(bash -c "source '$scripts/lib.sh'; free_inodes '$tmp'")
 [[ $inodes == unknown || $inodes =~ ^[0-9]+$ ]] || fail "free_inodes: $inodes"

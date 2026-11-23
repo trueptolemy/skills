@@ -109,7 +109,8 @@ run_round() {  # round, report, log, stdin file, start line, command...
 }
 
 if [[ $mode == start ]]; then
-  [[ -s $TD/task.md ]] || die "$TD/task.md is empty"
+  [[ -s $TD/task.md ]] || die "$TD/task.md is missing or empty; write it from $SKILL_DIR/templates/task.md"
+  ! grep -qE '<TASK-ID>|<one-line goal>' "$TD/task.md" || die "$TD/task.md still holds template placeholders (<TASK-ID>, <one-line goal>)"
   [[ -s $TASKS_ROOT/common.md ]] || die "$TASKS_ROOT/common.md is missing"
   [[ ! -e $TD/report.md ]] || die "$TD/report.md exists; use resume, or move it away to restart"
   cmd=("${CODEX_ENV[@]}" codex exec -C "$WT" "${CODEX_ARGS[@]}" -o "$TD/report.md" -)

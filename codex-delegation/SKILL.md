@@ -255,7 +255,10 @@ start Codex only after they confirm it.
    worktree's temporary directory `.tmp/` and checks that the worktree is
    clean. Pick an unused id.
 2. Write `<tasks>/<id>/task.md` from `templates/task.md`, starting with its
-   Mode and Allowed paths header. Append names,
+   Mode and Allowed paths header. `new-task.sh` does not create the file, so
+   write it as a new file without reading a placeholder first;
+   `run-codex.sh start` refuses a missing one or one that still holds the
+   template's placeholders. Append names,
    constants and limits from earlier reports under "Notes from earlier tasks",
    list the questions Codex must investigate as Unknowns, and spell out every
    authorized exception.

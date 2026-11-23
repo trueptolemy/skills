@@ -12,6 +12,8 @@
 # an existing task directory that already holds rounds or reports: reusing an
 # old identifier once made run-codex.sh return the previous task's report
 # instead of starting Codex. Pass --reuse-task only to continue that task.
+# It does not create task.md: the planner writes it as a new file from
+# templates/task.md, which needs no Read of a placeholder first.
 
 source "$(dirname "$0")/lib.sh"
 cdl_load
@@ -55,9 +57,8 @@ dirty=$(git -C "$WT" status --porcelain | wc -l)
 
 mkdir -p "$TD"
 [[ -e $TASKS_ROOT/common.md ]] || cp "$SKILL_DIR/templates/common.md" "$TASKS_ROOT/common.md"
-[[ -e $TD/task.md ]] || cp "$SKILL_DIR/templates/task.md" "$TD/task.md"
 
 echo "worktree  $WT  ($(git -C "$WT" log --oneline -1))"
 echo "branch    $branch from $from"
 echo "task dir  $TD"
-echo "next      edit $TD/task.md, then run run-codex.sh start $tid in the background"
+echo "next      write $TD/task.md from $SKILL_DIR/templates/task.md, then run pipeline.sh start $tid in the background"
