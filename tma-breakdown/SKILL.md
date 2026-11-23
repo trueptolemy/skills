@@ -21,6 +21,9 @@ The derivation, the sub-node weights and the noise band are in
 typical evidence patterns in [reference/interpretation.md](reference/interpretation.md).
 Cross-check rules (TMA node to EMON evidence) live in
 [reference/crosscheck-rules.json](reference/crosscheck-rules.json).
+A complete run on real data is in [example/](example/). Read
+`example/tma-breakdown-520.omnetpp_r.md` to see how deep the verdict summary,
+the hypotheses and the derived evidence are expected to go.
 
 All computation is done by `scripts/tma_breakdown.py` (Python 3 standard
 library only). Never type breakdown numbers by hand. If a parameter changes, rerun the script.

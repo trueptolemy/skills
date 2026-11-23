@@ -244,5 +244,30 @@ class T(unittest.TestCase):
         self.assertEqual(j['verdict'], 'NOT APPLICABLE')
 
 
+EXAMPLE = os.path.join(HERE, '..', 'example')
+
+
+@unittest.skipUnless(os.path.exists(os.path.join(EXAMPLE, '520 debug test.csv')), 'example data not present')
+class Example(unittest.TestCase):
+    """The computed sections of example/tma-breakdown-520.omnetpp_r.md must stay reproducible."""
+
+    def test_example_regression(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, 'r.md')
+            ex = lambda f: os.path.join(EXAMPLE, f)
+            cmd = [sys.executable, '-I', SCRIPT, 'report', '--emon', ex('520 debug test.csv'),
+                   '--scores', ex('520 debug score.csv'), '--workload', '520.omnetpp_r', '--baseline', 'bm',
+                   '--compare', '4k-nothp vm', '--compare', '2m vm', '--compare', '2m ept 2m text',
+                   '--beta', '4k-nothp vm=1', '--beta', '2m vm=1', '--beta', '2m ept 2m text=1',
+                   '--alpha', '2m vm=1.15%', '--confirm', 'throughput=yes', '--confirm', 'host_side_tma=yes',
+                   '--confirm', 'same_phase=yes', '--confirm', 'cpu_saturated=yes', '--out', out]
+            p = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            got, want = read(out), read(ex('tma-breakdown-520.omnetpp_r.md'))
+            cut = lambda t: t[t.index('## 3. Applicability checks'):t.index('## 6. Sub-node breakdown')]
+            self.assertEqual(cut(got), cut(want))
+            self.assertIn('the baseline window covers about 28% of its run', got)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=1)

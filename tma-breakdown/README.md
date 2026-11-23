@@ -17,6 +17,12 @@ The agent:
 5. writes a Markdown report with the tables and evidence-based hypotheses
    into the current directory (`tma-breakdown-<workload>.md`, overwritten on rerun).
 
+**See [example/](example/) for a complete run on real data** (520.omnetpp_r,
+bare metal vs three VM configurations). It contains the input EMON summary and
+scores, the exact commands, the delivered report and its JSON results.
+Reading `example/tma-breakdown-520.omnetpp_r.md` is the quickest way to see
+what the skill produces.
+
 ## Layout
 
 ```
@@ -29,8 +35,14 @@ reference/
   applicability.md            every check, its thresholds and what to do when it fails
   interpretation.md           evidence patterns (EPT walks, exit-induced front-end pollution, window mismatch, ...)
   crosscheck-rules.json       TMA node -> EMON evidence (metric / event per instr / per cycle / ratio)
+example/
+  README.md                   the scenario, the user's answers, the commands and what the example shows
+  520 debug test.csv          EMON summary (bm, 4k-nothp vm, 2m vm, 2m ept 2m text)
+  520 debug score.csv         SPECrate scores
+  tma-breakdown-520.omnetpp_r.md    the delivered report
+  tma-breakdown-520.omnetpp_r.json  its machine-readable results
 tests/
-  selftest.sh                 offline tests on synthetic EMON data (optional real-data smoke test)
+  selftest.sh                 offline tests (synthetic data, plus a regression run on example/)
   test_tma_breakdown.py
 ```
 
@@ -96,6 +108,10 @@ breakdown is not computed unless `--force` is given.
 ## Test
 
 ```bash
-tma-breakdown/tests/selftest.sh       # offline tests on synthetic data
+tma-breakdown/tests/selftest.sh       # synthetic tests plus a regression run on example/
 TMA_REAL_EMON=emon.csv TMA_REAL_SCORES=scores.csv tma-breakdown/tests/selftest.sh   # plus your own data
 ```
+
+After changing the script or the rules on purpose, rerun the example command
+from `example/README.md`. Then update the computed sections of the example
+report, so that the regression test reflects the new output.
