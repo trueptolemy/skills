@@ -50,6 +50,11 @@ if command -v codex >/dev/null; then
   for flag in --config --model --output-last-message; do
     grep -q -- "$flag" <<< "$rhelp" && pass "codex exec resume supports $flag" || fail "codex exec resume lacks $flag"
   done
+  if codex app-server daemon --help 2>&1 | grep -qE '^ +restart'; then
+    pass "codex app-server daemon restart exists (API-error procedure)"
+  else
+    warn "codex app-server daemon restart is missing; after an API error, restart Codex the way this CLI version supports"
+  fi
   if grep -q -- "--sandbox" <<< "$rhelp"; then
     warn "codex exec resume now has --sandbox; the -c sandbox_mode form still applies, but review run-codex.sh"
   fi

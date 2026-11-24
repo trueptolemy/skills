@@ -76,7 +76,7 @@ case ${1:-} in
       total=$((total + tokens))
       printf '%-14s %-12s %6s %4s %12s  %-10s %-5s %s\n' "$tid" "${mode:-?}" "$rounds" "$(voided_rounds)" "$tokens" "${status:-?}" "$guard" "$gates"
     done
-    used=$( [[ -f $reads ]] && wc -l < "$reads" || echo 0)
+    used=$(( $( [[ -f $reads ]] && wc -l < "$reads" || echo 0) ))
     echo "TOTAL tokens=$total full-reads=$used/$MAX_FULL_READS"
     ;;
   *) die "usage: ledger.sh full-read <task-id> <what> | guard-ack <task-id> r<N> <what> | void <task-id> r<N> <reason> | status" ;;

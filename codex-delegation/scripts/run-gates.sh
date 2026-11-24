@@ -107,7 +107,7 @@ git add -A
 note "WORKTREE $WT"
 note "HEAD     $(git log --oneline -1)"
 note "MODE     $TASK_MODE"
-note "STAGED   $(git diff --cached --name-only | wc -l) files"
+note "STAGED   $(( $(git diff --cached --name-only | wc -l) )) files"
 note "GATESET  $gates"
 merge_base=$(git merge-base "$base" HEAD 2>/dev/null || git rev-parse "$base")
 CHANGED_FILES=$( { git diff --name-only --diff-filter=AMR "$merge_base" HEAD; git diff --cached --name-only --diff-filter=AMR; } |

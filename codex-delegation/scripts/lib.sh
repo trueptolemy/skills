@@ -214,7 +214,7 @@ task_tmp() {
 report_check() {
   local report=$1 lines status
   if [[ ! -s $report ]]; then echo "REPORT MISSING $report"; return 1; fi
-  lines=$(wc -l < "$report")
+  lines=$(( $(wc -l < "$report") ))
   status=$(head -n 5 "$report" | grep -m1 -oE 'STATUS: *[A-Z]+' | awk '{print $2}' || true)
   echo "REPORT STATUS=${status:-UNKNOWN} lines=$lines $report"
   if [[ -z $status ]]; then

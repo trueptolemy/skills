@@ -14,15 +14,15 @@ pytest        | python -m pytest -q
 # --- Generated output must be committed (example: a TypeScript bridge) -----
 # node-build  | cd bridge && npm run build && git diff --quiet -- lib
 
-# --- autoperf, as used for the 2026-10 Analysis-loop work ------------------
-# import-path   | /path/.venv/bin/python -c 'import autoperf, os, sys; p = autoperf.__file__; sys.exit(0 if p.startswith(os.environ["WT"] + "/") else p)'
-# npm-typecheck | cd src/autoperf/agent/pi && npm run typecheck
-# npm-build     | cd src/autoperf/agent/pi && npm run build && git diff --quiet -- lib
-# repo-paths    | /path/.venv/bin/python -m autoperf.repository_paths
+# --- Python with a virtualenv outside the worktree, a TypeScript part, -----
+# --- 100% coverage and project pylint plugins --------------------------------
+# import-path   | /path/.venv/bin/python -c 'import mypkg, os, sys; p = os.path.realpath(mypkg.__file__); sys.exit(0 if p.startswith(os.environ["WT"] + "/") else p)'
+# npm-typecheck | cd src/mypkg/web && npm run typecheck
+# npm-build     | cd src/mypkg/web && npm run build && git diff --quiet -- lib
 # ruff-check    | /path/.venv/bin/python -m ruff check src tests
 # ruff-format   | /path/.venv/bin/python -m ruff format --check src tests
-# mypy          | /path/.venv/bin/python -m mypy src/autoperf
+# mypy          | /path/.venv/bin/python -m mypy src/mypkg
 # pytest        | /path/.venv/bin/python -m coverage run -m pytest
 # coverage      | /path/.venv/bin/python -m coverage report -m --fail-under=100
-# pylint-src    | /path/.venv/bin/python -m pylint src/autoperf
-# pylint-tests  | /path/.venv/bin/python -m pylint tests --load-plugins=autoperf.pylint_checkers,autoperf.pylint_test_config
+# pylint-src    | /path/.venv/bin/python -m pylint src/mypkg
+# pylint-tests  | /path/.venv/bin/python -m pylint tests --load-plugins=mypkg.pylint_checkers

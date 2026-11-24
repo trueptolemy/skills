@@ -10,5 +10,5 @@ dep=src/bridge/node_modules                # an untracked, installed tree
 ln -s "$main/$dep" "$wt/$dep"
 # Worktrees share the main repository's info/exclude. A symlink is not a
 # directory, so a `node_modules/` .gitignore rule does not hide it.
-exclude=$(git -C "$main" rev-parse --path-format=absolute --git-common-dir)/info/exclude
+exclude=$(cd "$main" && cd "$(git rev-parse --git-common-dir)" && pwd)/info/exclude
 grep -qxF "$dep" "$exclude" 2>/dev/null || echo "$dep" >> "$exclude"

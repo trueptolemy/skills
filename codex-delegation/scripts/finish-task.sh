@@ -104,7 +104,7 @@ case $DELIVERY in
   patch)
     mkdir -p "$TD/patches"
     git -C "$WT" format-patch -q -o "$TD/patches" "$BASE_BRANCH..$branch"
-    echo "wrote $(ls "$TD/patches" | wc -l) patch file(s) to $TD/patches"
+    echo "wrote $(( $(ls "$TD/patches" | wc -l) )) patch file(s) to $TD/patches"
     remove_worktree
     ;;
 esac

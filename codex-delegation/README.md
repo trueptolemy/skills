@@ -63,7 +63,7 @@ reference/
 
 - Claude Code
 - OpenAI Codex CLI (`codex`) authenticated for its configured provider
-- bash and git (the setup-hook example's `--path-format` needs git 2.31 or later)
+- bash 4.4 or later (`doctor.sh` checks it) and git
 
 Verified on Linux with bash 5.2 and GNU coreutils; macOS is untested.
 

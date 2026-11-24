@@ -65,7 +65,7 @@ if [[ $TASK_QUIET == yes || $gateset == none ]]; then
   echo "PIPELINE gates skipped (quiet task or --no-gates)"; exit 0
 fi
 
-n=$(ls "$TD"/report*.md | wc -l)
+n=$(( $(ls "$TD"/report*.md | wc -l) ))
 label=r$n; gate_args=()
 if [[ $gateset == focused ]]; then label=f$n; gate_args=(--focused); fi
 set +e

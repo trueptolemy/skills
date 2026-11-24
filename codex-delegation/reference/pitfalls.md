@@ -124,7 +124,7 @@ branches and combined integration gates.
 
 **The disk fills up.**
 - Trap: nine coexisting worktrees (each a full checkout of about 1.2 GB) filled
-  `/home`, and the next checkout stopped halfway.
+  the disk, and the next checkout stopped halfway.
 - Fix: remove each worktree once its task is merged and clean. `new-task.sh`
   refuses below `MIN_FREE_GB`.
 

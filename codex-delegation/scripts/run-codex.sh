@@ -154,7 +154,7 @@ fi
 cmd=("${CODEX_ENV[@]}" codex exec resume "${CODEX_ARGS[@]}" -o "$TD/report-r$n.md" "$sid" -)
 if (( dry )); then show "${cmd[@]}"; echo "cwd: $WT; stdin: $feedback; round $n"; exit 0; fi
 target=$TD/feedback-r$n.md
-if [[ $(realpath -m "$feedback") != "$(realpath -m "$target")" ]]; then
+if [[ $(cd "$(dirname "$feedback")" && pwd -P)/$(basename "$feedback") != "$(cd "$TD" && pwd -P)/feedback-r$n.md" ]]; then
   cp "$feedback" "$target"
 fi
 git -C "$WT" reset -q

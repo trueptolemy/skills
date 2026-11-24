@@ -360,10 +360,12 @@ Codex retrying while its log stops growing. Check the round's log tail
 (`tail -n 20`; this is not a full read). If it shows an API error:
 
 1. Close Codex. Stop the background job that runs the round (Claude Code:
-   TaskStop), then check with `pgrep -a codex` that no `codex exec` of this
-   task is left; a resumed round runs in the worktree
-   (`readlink /proc/<pid>/cwd`). In an operate stage, first check that no
-   operation Codex started is still running.
+   TaskStop), then check with `ps -eo pid,args | grep '[c]odex exec'` that
+   no `codex exec` of this task is left. A resumed round runs in the
+   worktree, so its working directory identifies the task
+   (`lsof -a -d cwd -p <pid>`, or `readlink /proc/<pid>/cwd` on Linux). In
+   an operate stage, first check that no operation Codex started is still
+   running.
 2. Run `codex app-server daemon restart`.
 3. Void the round the error broke, so it does not count toward the round
    breaker: `scripts/ledger.sh void <id> r<N> "<the error>"`.
